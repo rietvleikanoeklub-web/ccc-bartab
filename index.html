@@ -1110,8 +1110,12 @@ async function syncNow(manual=false,forcePush=false){
   const url=S.settings.sheetsUrl; if(!url){setSyncStatus('offline','No cloud URL');return;}
   setSyncStatus('syncing',forcePush?'Force pushing…':'Syncing…');
   try{
-    // STEP 1: Fetch cloud data and merge (unless force push)
-    if(!forcePush){
+    if(forcePush){
+      // FORCE PUSH: overwrite cloud, no merge
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+    } else {
+      // CLOUD-AS-TRUTH SYNC: cloud wins, only add genuinely new local items
       let cloud=null;
       try{
         const check=await fetch(url);
@@ -1119,85 +1123,70 @@ async function syncNow(manual=false,forcePush=false){
       }catch(e){/* offline — push local only */}
 
       if(cloud){
-        const localTx=S.transactions.length;
-        const cloudTx=cloud.transactions?cloud.transactions.length:0;
-        console.log('[SYNC] Merging: local='+localTx+' cloud='+cloudTx);
+        console.log('[SYNC] Cloud: '+((cloud.transactions||[]).length)+' tx, '+((cloud.users||[]).length)+' users');
+        
+        // Transactions: cloud is truth, add only NEW local transactions
         if(Array.isArray(cloud.transactions)){
-          S.transactions=mergeById(S.transactions, cloud.transactions).sort((a,b)=>new Date(a.date)-new Date(b.date));
-          console.log('[SYNC] After merge: '+S.transactions.length+' transactions');
+          const cloudTxIds=new Set(cloud.transactions.map(t=>String(t.id)));
+          const newLocal=S.transactions.filter(t=>!cloudTxIds.has(String(t.id)));
+          S.transactions=cloud.transactions.concat(newLocal).sort((a,b)=>new Date(a.date)-new Date(b.date));
+          // Dedup by content (same member+date+amount+desc)
+          const seen=new Set();
+          S.transactions=S.transactions.filter(t=>{
+            const key=String(t.memberId)+'|'+String(t.date)+'|'+String(t.amount)+'|'+(t.desc||'').substring(0,30);
+            if(seen.has(key)) return false; seen.add(key); return true;
+          });
         }
-        if(Array.isArray(cloud.stock_purchases)){
-          S.stock_purchases=mergeById(S.stock_purchases||[], cloud.stock_purchases);
-        }
-        if(Array.isArray(cloud.audit)){
-          S.audit=mergeById(S.audit||[], cloud.audit).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,1000);
-        }
+        
+        // Members: cloud is truth, add new local members, dedup by name
         if(Array.isArray(cloud.members)&&cloud.members.length>0){
-          S.members=mergeMembers(S.members, cloud.members);
+          const cloudMemIds=new Set(cloud.members.map(m=>String(m.id)));
+          const newMem=S.members.filter(m=>!cloudMemIds.has(String(m.id)));
+          S.members=cloud.members.concat(newMem);
+          const seenNames=new Set();
+          S.members=S.members.filter(m=>{const k=m.name.toLowerCase();if(seenNames.has(k))return false;seenNames.add(k);return true;});
         }
-        if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0&&!S.drinks.length){
-          S.drinks=cloud.drinks;
-        }
+        
+        // Users: cloud ALWAYS wins (PINs from cloud)
         if(Array.isArray(cloud.users)&&cloud.users.length>0){
-          // For users: cloud wins (PINs sync from cloud)
-          const localMap=new Map();
-          S.users.forEach(u=>localMap.set(String(u.id),u));
-          const cloudMap=new Map();
-          cloud.users.forEach(u=>cloudMap.set(String(u.id),u));
-          // Cloud overwrites local for matching IDs
-          cloudMap.forEach((u,id)=>localMap.set(id,u));
-          S.users=Array.from(localMap.values());
-          S.users.forEach(u=>{ u.pin=String(u.pin||'0000').padStart(4,'0'); if(u.pin==='****') u.pin='0000'; });
+          S.users=cloud.users;
+          S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
         }
-        if(cloud.settings&&typeof cloud.settings==='object'){
-          S.settings={...cloud.settings,...S.settings};
+        
+        // Drinks: cloud is truth
+        if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0) S.drinks=cloud.drinks;
+        // Stock purchases: cloud + new local
+        if(Array.isArray(cloud.stock_purchases)){
+          const spIds=new Set(cloud.stock_purchases.map(p=>String(p.id)));
+          const newSp=(S.stock_purchases||[]).filter(p=>!spIds.has(String(p.id)));
+          S.stock_purchases=cloud.stock_purchases.concat(newSp);
         }
-        invalidateBalCache();
-        normalizeData();
+        // Audit: cloud + new local
+        if(Array.isArray(cloud.audit)){
+          const aIds=new Set(cloud.audit.map(a=>String(a.id)));
+          const newA=(S.audit||[]).filter(a=>!aIds.has(String(a.id)));
+          S.audit=cloud.audit.concat(newA).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,1000);
+        }
+        if(cloud.settings) S.settings={...S.settings,...cloud.settings};
+        
+        invalidateBalCache(); normalizeData();
+        console.log('[SYNC] Result: '+S.transactions.length+' tx, '+S.users.length+' users');
       }
+      
+      // Push result back to cloud
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
     }
-
-    // STEP 3: Push merged data to cloud
-    // PINs are safe inside JSON blob — Sheets can't corrupt them there
-    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases,audit:S.audit,settings:S.settings,users:S.users})});
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    
     const t=new Date(); setSyncStatus('synced',('Synced '+(t.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}))));
     saveLocal(); _localDirty=false;
-    if(manual){
-      const txCount=S.transactions.length;
-      toast('✅ Synced — '+txCount+' transactions');
-    }
+    if(manual) toast('✅ Synced — '+S.transactions.length+' transactions');
   }catch(e){ setSyncStatus('error','Sync failed — working offline'); if(manual) toast('⚠️ Sync failed — saved locally'); }
 }
 
-// Merge two arrays by ID — union, no duplicates
-function mergeById(local, cloud){
-  const map=new Map();
-  local.forEach(item=>{ if(item.id) map.set(String(item.id), item); });
-  cloud.forEach(item=>{ if(item.id && !map.has(String(item.id))) map.set(String(item.id), item); });
-  return Array.from(map.values());
-}
+// Auto-sync: only push if there are local changes (2 min interval)
+setInterval(()=>{ if(_localDirty && !_syncPaused) syncNow(false); }, 120000);
 
-// Merge members — keep the one with more contact info
-function mergeMembers(local, cloud){
-  const map=new Map();
-  local.forEach(m=>{ map.set(String(m.id), m); });
-  cloud.forEach(m=>{
-    const key=String(m.id);
-    if(!map.has(key)){ map.set(key, m); }
-    else {
-      const existing=map.get(key);
-      // Keep whichever has more info
-      if(!existing.cell&&m.cell) existing.cell=m.cell;
-      if(!existing.email&&m.email) existing.email=m.email;
-      if(!existing.photo&&m.photo) existing.photo=m.photo;
-    }
-  });
-  return Array.from(map.values());
-}
-
-// Auto-sync: only push if there are local changes
-setInterval(()=>{ if(_localDirty && !_syncPaused) syncNow(false); }, 60000);
 
 // Initialize from Cloud — full overwrite for first-time device setup
 async function initFromCloud(){
