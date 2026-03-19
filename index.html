@@ -1062,7 +1062,11 @@ function loadLocal(){
   } catch(e){}
   invalidateBalCache();
   if(!S.drinks||!S.drinks.length) initDrinks();
-  if(!S.users||!S.users.length) S.users=DEFAULT_USERS;
+  if(!S.users||!S.users.length){
+    // Only use defaults if no cloud URL (standalone mode)
+    if(!S.settings.sheetsUrl) S.users=DEFAULT_USERS.map(u=>({...u}));
+    else S.users=[]; // Cloud will provide users via Initialize
+  }
   // Ensure PINs are always valid 4-digit strings
   S.users.forEach(u=>{ u.pin=String(u.pin||'0000').padStart(4,'0'); if(u.pin==='****'||u.pin.length!==4) u.pin='0000'; });
   if(!S.audit) S.audit=[];
@@ -1136,7 +1140,14 @@ async function syncNow(manual=false,forcePush=false){
           S.drinks=cloud.drinks;
         }
         if(Array.isArray(cloud.users)&&cloud.users.length>0){
-          S.users=mergeById(S.users, cloud.users);
+          // For users: cloud wins (PINs sync from cloud)
+          const localMap=new Map();
+          S.users.forEach(u=>localMap.set(String(u.id),u));
+          const cloudMap=new Map();
+          cloud.users.forEach(u=>cloudMap.set(String(u.id),u));
+          // Cloud overwrites local for matching IDs
+          cloudMap.forEach((u,id)=>localMap.set(id,u));
+          S.users=Array.from(localMap.values());
           S.users.forEach(u=>{ u.pin=String(u.pin||'0000').padStart(4,'0'); if(u.pin==='****') u.pin='0000'; });
         }
         if(cloud.settings&&typeof cloud.settings==='object'){
@@ -1283,7 +1294,7 @@ function showUserSelect(){
   document.getElementById('loginUserSelect').style.display='flex';
   document.getElementById('loginPinWrap').style.display='none';
   // First-time setup detection
-  const isFirstTime=S.transactions.length===0 && S.members.length<=3 && S.settings.sheetsUrl;
+  const isFirstTime=(S.transactions.length===0 || S.users.length===0) && S.settings.sheetsUrl;
   let html=S.users.map(u=>('\n    <div class="user-btn" onclick="selectUser(\''+(u.id)+'\')">\n      <div class="ub-avatar" style="background:'+(u.color)+'">'+(u.initials||initials(u.name))+'</div>\n      <div class="ub-info">\n        <h3>'+(esc(u.name))+'</h3>\n        <p>'+sessionDevice+'</p>\n        <span class="ub-role '+(roleClass(u.role))+'">'+(roleLabel(u.role))+'</span>\n      </div>\n    </div>')).join('');
   if(isFirstTime){
     html+='<div style="margin-top:12px;padding:14px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.25);border-radius:12px;text-align:center;">'
