@@ -977,7 +977,7 @@ const DEFAULT_USERS = [
 
 let S = {
   members:[], drinks:[], transactions:[], stock_purchases:[], audit:[],
-  users: DEFAULT_USERS,
+  users: [], // Users come from cloud — never hardcode PINs
   settings:{
     barName:'CCC Bar', currency:'R', deviceName:'Galaxy Tab',
     smsUser:'', smsPass:'', smsSender:'CCCBar',
@@ -1063,12 +1063,11 @@ function loadLocal(){
   invalidateBalCache();
   if(!S.drinks||!S.drinks.length) initDrinks();
   if(!S.users||!S.users.length){
-    // Only use defaults if no cloud URL (standalone mode)
-    if(!S.settings.sheetsUrl) S.users=DEFAULT_USERS.map(u=>({...u}));
-    else S.users=[]; // Cloud will provide users via Initialize
+    if(S.settings.sheetsUrl) S.users=[]; // Cloud provides users
+    else S.users=DEFAULT_USERS.map(u=>({...u})); // Standalone mode
   }
-  // Ensure PINs are always valid 4-digit strings
-  S.users.forEach(u=>{ u.pin=String(u.pin||'0000').padStart(4,'0'); if(u.pin==='****'||u.pin.length!==4) u.pin='0000'; });
+  // Only normalize PINs that are actually set — don't reset cloud PINs
+  S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
   if(!S.audit) S.audit=[];
   normalizeData();
 }
