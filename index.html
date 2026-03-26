@@ -1,8 +1,40 @@
 <!DOCTYPE html>
+<!--
+  ╔═══════════════════════════════════════════════════════════╗
+  ║  CCC BAR TAB — Centurion Canoe Club                      ║
+  ║  Version: 4.20  (2026-03-21)                              ║
+  ╠═══════════════════════════════════════════════════════════╣
+  ║  CHANGELOG:                                               ║
+  ║  v4.20 2026-03-21  Version tracking added to app UI       ║
+  ║                    Font sizes increased for phones         ║
+  ║                    Alet email added to admin CC            ║
+  ║                    Stock sync fix (local changes kept)     ║
+  ║                    Users start empty (PINs from cloud)     ║
+  ║  v4.19 2026-03-19  Cloud-as-truth sync rewrite            ║
+  ║                    Apps Script v4 (Drive file storage)     ║
+  ║                    Content dedup (no more doubling)        ║
+  ║  v4.18 2026-03-19  Force Push / Initialize Device         ║
+  ║                    Sync pause during admin operations      ║
+  ║                    Clean Reimport (one click)              ║
+  ║                    Debug Transactions tool                 ║
+  ║  v4.17 2026-03-19  Full user CRUD (add/edit/remove)       ║
+  ║                    First-time device setup screen          ║
+  ║                    PINs sync via cloud JSON                ║
+  ║  v4.16 2026-03-19  Merge sync architecture                ║
+  ║                    Daily backups in Apps Script            ║
+  ║  v4.15 2026-03-19  Bulk email/WhatsApp to owed members    ║
+  ║                    30min cooldown + confirmation preview   ║
+  ║                    Reports fix (amount sign not type)      ║
+  ║  v4.14 2026-03-19  History import from old app Excel      ║
+  ║                    Device detection                        ║
+  ║  v4.0  2026-03-18  Initial v4 rewrite                     ║
+  ╚═══════════════════════════════════════════════════════════╝
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="app-version" content="4.20">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -22,11 +54,11 @@
   --radius-sm:clamp(8px,2vw,12px);
   --gap:clamp(8px,2vw,14px);
   --pad:clamp(10px,3vw,20px);
-  --font-xs:clamp(.62rem,.5rem + .5vw,.75rem);
-  --font-sm:clamp(.72rem,.6rem + .5vw,.85rem);
-  --font-md:clamp(.82rem,.7rem + .5vw,.95rem);
-  --font-lg:clamp(.95rem,.8rem + .6vw,1.1rem);
-  --font-xl:clamp(1.1rem,.9rem + .8vw,1.4rem);
+  --font-xs:clamp(.78rem,.65rem + .5vw,.92rem);
+  --font-sm:clamp(.88rem,.75rem + .5vw,1.02rem);
+  --font-md:clamp(.96rem,.84rem + .5vw,1.12rem);
+  --font-lg:clamp(1.1rem,.95rem + .6vw,1.3rem);
+  --font-xl:clamp(1.2rem,1rem + .8vw,1.55rem);
   --font-2xl:clamp(1.3rem,1rem + 1vw,1.8rem);
 }
 
@@ -783,6 +815,7 @@ select.fin{cursor:pointer;}
     <img class="login-logo" src="https://centcc.co.za/assets/images/CCC-logo-new.png" onerror="this.style.display='none'" alt="CCC">
     <div class="login-title">CCC Bar Tab</div>
     <div class="login-sub">Centurion Canoe Club · Rietvlei Dam</div>
+    <div id="loginVer" style="text-align:center;font-size:.65rem;color:var(--muted);margin-top:4px;opacity:.6;"></div>
     <div id="loginUserSelect" class="user-select"></div>
     <div id="loginPinWrap" class="pin-wrap" style="display:none;">
       <button class="pin-back" onclick="showUserSelect()">← Back</button>
@@ -967,6 +1000,12 @@ select.fin{cursor:pointer;}
 
 <script>
 // ═══════════════════════════════════════════════════════════
+// APP VERSION
+// ═══════════════════════════════════════════════════════════
+const APP_VERSION = '4.20';
+const APP_BUILD = '2026-03-21';
+
+// ═══════════════════════════════════════════════════════════
 // DATA MODEL
 // ═══════════════════════════════════════════════════════════
 const DEFAULT_USERS = [
@@ -985,7 +1024,7 @@ let S = {
     sheetsUrl:'https://script.google.com/macros/s/AKfycbzCVvskum8l6n2cGkZ6MG61hmBVAPYcMzEpeQf2OaHZSFKMJKtk9F_4N5Gbnw66mZgmZw/exec', adminNames:'Elton,Johan',
     lowStockDefault:5, alertDay:4, alertHour:10,
     autoLockMinutes:30,
-    adminEmails:'elton@edp.co.za,johanstrydom13@gmail.com',
+    adminEmails:'elton@edp.co.za,johanstrydom13@gmail.com,aletbosman@gmail.com',
     callMeBotNumbers:''
   }
 };
@@ -1063,8 +1102,8 @@ function loadLocal(){
   invalidateBalCache();
   if(!S.drinks||!S.drinks.length) initDrinks();
   if(!S.users||!S.users.length){
-    if(S.settings.sheetsUrl) S.users=[]; // Cloud provides users
-    else S.users=DEFAULT_USERS.map(u=>({...u})); // Standalone mode
+    if(!S.settings.sheetsUrl) S.users=DEFAULT_USERS.map(u=>({...u}));
+    // If cloud URL exists but no users loaded from localStorage, keep empty — Initialize will fill them
   }
   // Only normalize PINs that are actually set — don't reset cloud PINs
   S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
@@ -1153,8 +1192,24 @@ async function syncNow(manual=false,forcePush=false){
           S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
         }
         
-        // Drinks: cloud is truth
-        if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0) S.drinks=cloud.drinks;
+        // Drinks: merge — keep local stock/price if modified, add new cloud drinks
+        if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
+          const localDrinkMap=new Map();
+          S.drinks.forEach(d=>localDrinkMap.set(String(d.id),d));
+          S.drinks=cloud.drinks.map(cd=>{
+            const local=localDrinkMap.get(String(cd.id));
+            if(local){
+              // Preserve local stock if it differs (means user just changed it)
+              if(local.stock!==cd.stock) cd.stock=local.stock;
+              if(local.price!==cd.price) cd.price=local.price;
+              if(local.threshold!==cd.threshold) cd.threshold=local.threshold;
+            }
+            return cd;
+          });
+          // Add any new local drinks not in cloud
+          const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
+          S.drinks.forEach(d=>{if(!cloudDrinkIds.has(String(d.id))) S.drinks.push(d);});
+        }
         // Stock purchases: cloud + new local
         if(Array.isArray(cloud.stock_purchases)){
           const spIds=new Set(cloud.stock_purchases.map(p=>String(p.id)));
@@ -1274,6 +1329,8 @@ document.addEventListener('click', resetAutoLock);
 let loginTarget = null, loginBuf = '';
 
 function renderLogin(){
+  const vEl=document.getElementById('loginVer');
+  if(vEl) vEl.textContent='v'+APP_VERSION+' ('+APP_BUILD+')';
   showUserSelect();
 }
 
@@ -1336,8 +1393,8 @@ function lKey(k){
       currentUser=loginTarget; sessionStart=new Date();
       auditLog(('Logged in as '+(loginTarget.name)), 'login', {});
       saveLocal();
-      // Pull from cloud first, then push — prevents stale device overwriting fresh data
-      if(S.settings.sheetsUrl && !_syncPaused){ syncNow(); } else { saveLocal(); }
+      // Sync in background — don't block login (works offline)
+      if(S.settings.sheetsUrl && !_syncPaused){ setTimeout(()=>syncNow(),500); }
       goTo('sHome'); resetAutoLock();
     } else {
       document.getElementById('loginErr').textContent='Incorrect PIN — try again';
@@ -1386,7 +1443,7 @@ function renderHome(){
   if(badge) badge.innerHTML=('<div class="user-avatar" style="background:'+(currentUser.color)+'">'+(currentUser.initials||initials(currentUser.name))+'</div><div class="user-name">'+(currentUser.name)+'</div>');
   // Session info
   const si=document.getElementById('sessionInfo');
-  if(si) si.textContent=(sessionDevice+' · '+(new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'})));
+  if(si) si.textContent=(sessionDevice+' · '+(new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'}))+' · v'+APP_VERSION);
   const su=document.getElementById('sessionUser');
   if(su) su.innerHTML=('<div style="width:7px;height:7px;border-radius:50%;background:'+(currentUser.color)+';flex-shrink:0;"></div><span style="font-size:.73rem;">'+(currentUser.name)+' · '+(roleLabel(currentUser.role))+' · tap to log out</span>');
   // Stats
@@ -1682,7 +1739,7 @@ function saveEditDrink(){
   else if(editDrinkImgType==='logo'&&editDrinkLogoUrl){img=editDrinkLogoUrl;imgType='logo';}
   if(!editingDrinkId){ S.drinks.push({id:uid(),name,imgType,img,price,stock,threshold}); auditLog(('Added drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' added')); }
   else { const dk=S.drinks.find(x=>String(x.id)===String(editingDrinkId)); Object.assign(dk,{name,imgType,img,price,stock,threshold}); auditLog(('Edited drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' updated')); }
-  closeEditDrink(); saveLocal(); syncNow(); renderDrinkMan();
+  closeEditDrink(); saveLocal(); syncNow(false,true); renderDrinkMan();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1780,8 +1837,8 @@ function renderDrinkMan(){
   document.getElementById('drinkManBody').innerHTML=html;
 }
 
-function updDrink(id,f,v){ const dk=S.drinks.find(x=>String(x.id)===String(id)); if(dk){dk[f]=v;saveLocal();syncNow();} }
-function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});S.drinks=S.drinks.filter(String(x.id)!==String(id));saveLocal();syncNow();renderDrinkMan();toast('🗑 Removed');})); }
+function updDrink(id,f,v){ const dk=S.drinks.find(x=>String(x.id)===String(id)); if(dk){dk[f]=v;saveLocal();syncNow(false,true);} }
+function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});S.drinks=S.drinks.filter(x=>String(x.id)!==String(id));saveLocal();syncNow(false,true);renderDrinkMan();toast('🗑 Removed');})); }
 
 // ═══════════════════════════════════════════════════════════
 // AUDIT LOG SCREEN
@@ -1848,7 +1905,7 @@ function renderUsers(){
 function changeUserPin(uid,pin){
   if(!/^\d{4}$/.test(pin)){toast('⚠️ PIN must be exactly 4 digits');return;}
   const u=S.users.find(x=>String(x.id)===String(uid)); if(!u) return;
-  u.pin=pin; saveLocal(); syncNow();
+  u.pin=pin; saveLocal(); syncNow(false,true);
   auditLog(('Changed PIN for user: '+(u.name)), 'admin', {targetUser:u.name});
   toast(('✅ PIN updated for '+(u.name)));
 }
@@ -1857,7 +1914,7 @@ function updateUser(uid,field,value){
   const u=S.users.find(x=>String(x.id)===String(uid)); if(!u) return;
   u[field]=value;
   if(field==='name') u.initials=initials(value);
-  saveLocal(); syncNow();
+  saveLocal(); syncNow(false,true); // Force push — prevents cloud overwriting the change
   auditLog('Updated user '+u.name+' ('+field+')','admin',{});
   toast('✅ '+u.name+' updated');
   renderUsers();
@@ -1868,7 +1925,7 @@ function addNewUser(){
   const color=COLORS[S.users.length % COLORS.length];
   const id='u'+uid();
   S.users.push({id,name:'New User',role:'operator',color,pin:'0000',initials:'NU'});
-  saveLocal(); syncNow();
+  saveLocal(); syncNow(false,true);
   auditLog('Added new user','admin',{});
   toast('✅ New user added — set name, PIN and role');
   renderUsers();
@@ -1883,7 +1940,7 @@ function removeUser(uid){
   showConf('Remove User','Remove '+u.name+'?\n\nThey will no longer be able to log in.','',()=>{
     S.users=S.users.filter(x=>String(x.id)!==String(uid));
     auditLog('Removed user: '+u.name,'admin',{});
-    saveLocal(); syncNow();
+    saveLocal(); syncNow(false,true);
     toast('🗑 '+u.name+' removed');
     renderUsers();
   });
@@ -1896,7 +1953,7 @@ function renderReports(){
   const totalOwed=S.members.reduce((s,m)=>{const b=bal(m.id);return s+(b<0?Math.abs(b):0);},0);
   const totalCredit=S.members.reduce((s,m)=>{const b=bal(m.id);return s+(b>0?b:0);},0);
   const totalSales=S.transactions.reduce((s,t)=>{const a=Number(t.amount)||0;return s+(a<0?Math.abs(a):0);},0);
-  document.getElementById('reportsBody').innerHTML=('\n    <div class="stat-row" style="margin-bottom:13px;">\n      <div class="stat-card"><div class="stat-val" style="color:var(--red)">'+(S.settings.currency)+(totalOwed.toFixed(0))+'</div><div class="stat-lbl">Owed</div></div>\n      <div class="stat-card"><div class="stat-val" style="color:var(--green)">'+(S.settings.currency)+(totalCredit.toFixed(0))+'</div><div class="stat-lbl">Credit</div></div>\n      <div class="stat-card"><div class="stat-val">'+(S.settings.currency)+(totalSales.toFixed(0))+'</div><div class="stat-lbl">Sales</div></div>\n    </div>\n    <div class="sec-hdr">Export</div>\n    <div class="action-row" onclick="exportFull()"><div class="ar-icon" style="background:rgba(39,174,96,.18)">📊</div><div class="ar-text"><h3>Full Export (Excel)</h3><p>Members · transactions · stock · audit log</p></div></div>\n    <div class="action-row" onclick="exportBalances()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📋</div><div class="ar-text"><h3>Balance Sheet</h3><p>Current balance for all members</p></div></div>\n    <div class="action-row" onclick="exportStock()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">📦</div><div class="ar-text"><h3>Stock Report</h3><p>Current inventory levels</p></div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>View Audit Log</h3><p>Who did what and when</p></div></div>\n    <div class="sec-hdr">Top Members by Spend</div>\n    '+(function(){
+  document.getElementById('reportsBody').innerHTML=('\n    <div class="stat-row" style="margin-bottom:13px;">\n      <div class="stat-card"><div class="stat-val" style="color:var(--red)">'+(S.settings.currency)+(totalOwed.toFixed(0))+'</div><div class="stat-lbl">Owed</div></div>\n      <div class="stat-card"><div class="stat-val" style="color:var(--green)">'+(S.settings.currency)+(totalCredit.toFixed(0))+'</div><div class="stat-lbl">Credit</div></div>\n      <div class="stat-card"><div class="stat-val">'+(S.settings.currency)+(totalSales.toFixed(0))+'</div><div class="stat-lbl">Sales</div></div>\n    </div>\n    <div class="sec-hdr">Export</div>\n    <div class="action-row" onclick="exportFull()"><div class="ar-icon" style="background:rgba(39,174,96,.18)">📊</div><div class="ar-text"><h3>Full Export (Excel)</h3><p>Members · transactions · stock · audit log</p></div></div>\n    <div class="action-row" onclick="exportBalances()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📋</div><div class="ar-text"><h3>Balance Sheet</h3><p>Current balance for all members</p></div></div>\n    <div class="action-row" onclick="exportStock()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">📦</div><div class="ar-text"><h3>Stock Report</h3><p>Current inventory levels</p></div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>View Audit Log</h3><p>Who did what and when</p></div></div>\n    <div class="sec-hdr">Session Reports</div>\n    <div class="action-row" onclick="showSessionReport(\'last\')"><div class="ar-icon" style="background:rgba(41,182,246,.18)">🌙</div><div class="ar-text"><h3>Last Thursday Report</h3><p>All transactions from last session</p></div></div>\n    <div class="action-row" onclick="showSessionReport(\'pick\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">📅</div><div class="ar-text"><h3>Pick a Date</h3><p>View transactions for a specific day</p></div></div>\n    <div class="sec-hdr">Top Members by Spend</div>\n    '+(function(){
       const spendData=S.members.map(m=>{
         const mid=String(m.id);
         let totalSpent=0, drinkCount=0;
@@ -1938,11 +1995,115 @@ function exportStock(){
   toast('📦 Stock report exported');
 }
 
+function showSessionReport(mode){
+  let targetDate;
+  if(mode==='pick'){
+    const input=prompt('Enter date (YYYY-MM-DD):',new Date().toISOString().slice(0,10));
+    if(!input) return;
+    targetDate=input;
+  } else {
+    // Find last Thursday (or most recent session with transactions)
+    const dates=new Map();
+    S.transactions.forEach(t=>{
+      if(!t.date) return;
+      const d=t.date.substring(0,10);
+      if(d && t.device!=='Old App') dates.set(d,(dates.get(d)||0)+1);
+    });
+    // If no recent sessions, use old app dates
+    if(!dates.size){
+      S.transactions.forEach(t=>{
+        if(!t.date) return;
+        const d=t.date.substring(0,10);
+        if(d) dates.set(d,(dates.get(d)||0)+1);
+      });
+    }
+    const sorted=[...dates.entries()].sort((a,b)=>b[0].localeCompare(a[0]));
+    if(!sorted.length){toast('ℹ️ No sessions found');return;}
+    targetDate=sorted[0][0]; // Most recent date
+  }
+  
+  // Filter transactions for that date
+  const dayTx=S.transactions.filter(t=>t.date&&t.date.substring(0,10)===targetDate);
+  if(!dayTx.length){toast('ℹ️ No transactions on '+targetDate);return;}
+  
+  // Calculate stats
+  const purchases=dayTx.filter(t=>(Number(t.amount)||0)<0);
+  const topups=dayTx.filter(t=>(Number(t.amount)||0)>0);
+  const totalSales=purchases.reduce((s,t)=>s+Math.abs(Number(t.amount)||0),0);
+  const totalTopups=topups.reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const uniqueMembers=new Set(dayTx.map(t=>String(t.memberId))).size;
+  
+  // Drinks breakdown
+  const drinkCounts={};
+  purchases.forEach(t=>{
+    const desc=cleanDesc(t.desc||'Unknown');
+    drinkCounts[desc]=(drinkCounts[desc]||0)+1;
+  });
+  const drinkList=Object.entries(drinkCounts).sort((a,b)=>b[1]-a[1]);
+  
+  // Member spend breakdown
+  const memberSpend={};
+  dayTx.forEach(t=>{
+    const m=S.members.find(x=>String(x.id)===String(t.memberId));
+    const name=m?m.name:'Unknown';
+    const amt=Number(t.amount)||0;
+    if(!memberSpend[name]) memberSpend[name]={spent:0,topup:0};
+    if(amt<0) memberSpend[name].spent+=Math.abs(amt);
+    else memberSpend[name].topup+=amt;
+  });
+  const memberList=Object.entries(memberSpend).filter(([n,d])=>d.spent>0).sort((a,b)=>b[1].spent-a[1].spent);
+  
+  // Format date nicely
+  const dObj=new Date(targetDate+'T12:00:00');
+  const dateLabel=dObj.toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  
+  // Build report HTML
+  let html='<div style="padding:2px;">';
+  html+='<div style="text-align:center;margin-bottom:12px;"><h2 style="font-family:\'Barlow Condensed\',sans-serif;color:var(--accent);margin:0;">🌙 Session Report</h2><div style="color:var(--muted);font-size:var(--font-sm);">'+esc(dateLabel)+'</div></div>';
+  
+  html+='<div class="stat-row" style="margin-bottom:12px;">';
+  html+='<div class="stat-card"><div class="stat-val" style="color:var(--red)">'+S.settings.currency+totalSales.toFixed(0)+'</div><div class="stat-lbl">Sales</div></div>';
+  html+='<div class="stat-card"><div class="stat-val" style="color:var(--green)">'+S.settings.currency+totalTopups.toFixed(0)+'</div><div class="stat-lbl">Top-ups</div></div>';
+  html+='<div class="stat-card"><div class="stat-val">'+uniqueMembers+'</div><div class="stat-lbl">Members</div></div>';
+  html+='</div>';
+  
+  html+='<div class="sec-hdr">Drinks Sold ('+purchases.length+' items)</div>';
+  drinkList.forEach(([name,count])=>{
+    html+='<div class="tx-item"><div class="tx-left"><div class="txn">'+esc(name)+'</div></div><div class="tx-amt">'+count+'x</div></div>';
+  });
+  
+  html+='<div class="sec-hdr" style="margin-top:12px;">Member Spend</div>';
+  memberList.forEach(([name,data])=>{
+    html+='<div class="tx-item"><div class="tx-left"><div class="txn">'+esc(name)+'</div></div><div class="tx-amt" style="color:var(--red)">-'+S.settings.currency+data.spent.toFixed(2)+'</div></div>';
+  });
+  
+  html+='<div style="margin-top:14px;display:flex;gap:8px;">';
+  html+='<button class="nbtn email" style="flex:1;" onclick="exportSessionReport(\''+targetDate+'\')">📊 Export Excel</button>';
+  html+='</div>';
+  html+='</div>';
+  
+  // Show in a modal-like overlay on reportsBody
+  const body=document.getElementById('reportsBody');
+  body.innerHTML='<div class="action-row" onclick="renderReports()"><div class="ar-icon" style="background:rgba(0,136,204,.18)">←</div><div class="ar-text"><h3>Back to Reports</h3></div></div>'+html;
+}
+
+function exportSessionReport(dateStr){
+  const dayTx=S.transactions.filter(t=>t.date&&t.date.substring(0,10)===dateStr);
+  const wb=XLSX.utils.book_new();
+  const rows=dayTx.map(t=>{
+    const m=S.members.find(x=>String(x.id)===String(t.memberId));
+    return {Time:(t.date||'').substring(11,16),Member:m?m.name:'?',Description:cleanDesc(t.desc||''),Amount:Number(t.amount)||0,Type:t.type||'',EnteredBy:t.enteredByName||'',Device:t.device||''};
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{Note:'None'}]),'Session');
+  XLSX.writeFile(wb,('CCC_Session_'+dateStr+'.xlsx'));
+  toast('📊 Session report exported');
+}
+
 // ═══════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════
 function renderSettings(){
-  document.getElementById('settingsBody').innerHTML=('\n    <div class="info-box">⚙️ Changes save when you tap "Save Settings".</div>\n    <div class="sec-hdr">☁️ Google Sheets Cloud</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Apps Script URL</div><div class="sdesc">Paste deployed Google Apps Script URL</div></div></div>\n      <div style="padding:8px 0;"><input class="s-in" id="s-sheets" value="'+(esc(S.settings.sheetsUrl))+'" placeholder="https://script.google.com/macros/s/..." style="width:100%;text-align:left;font-size:.72rem;"></div>\n    </div>\n    <div class="warn-box">📋 <b>Setup:</b> Google Sheets → Extensions → Apps Script → Paste code → Deploy as Web App → Copy URL above</div>\n    <button onclick="downloadAppsScript()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius-sm);cursor:pointer;font-size:.83rem;width:100%;margin-bottom:13px;">📥 Download Apps Script Code</button>\n    <div class="sec-hdr">📱 SMS (SMSPortal)</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Username</div></div><input class="s-in" id="s-su" value="'+(esc(S.settings.smsUser))+'"></div>\n      <div class="s-row"><div><div class="slabel">Password</div></div><input class="s-in" id="s-sp" type="password" value="'+(esc(S.settings.smsPass))+'"></div>\n      <div class="s-row"><div><div class="slabel">Sender Name</div><div class="sdesc">Max 11 chars</div></div><input class="s-in" id="s-ss" value="'+(esc(S.settings.smsSender))+'" maxlength="11"></div>\n    </div>\n    <div class="sec-hdr">📬 Telegram Alerts</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bot Token</div></div><input class="s-in" id="s-tt" type="password" value="'+(esc(S.settings.telegramToken))+'"></div>\n      <div class="s-row"><div><div class="slabel">Chat/Group ID</div></div><input class="s-in" id="s-tc" value="'+(esc(S.settings.telegramChatId))+'"></div>\n    </div>\n    <div class="sec-hdr">💬 WhatsApp Alerts (CallMeBot)</div>\n    <div class=\"settings-card\">\n      <div class=\"s-row\"><div><div class=\"slabel\">Admin Numbers</div><div class=\"sdesc\">phone,apikey per admin (semicolon separated)</div></div></div>\n      <div style=\"padding:0 0 8px;\"><input class=\"s-in\" id=\"s-cmb\" value=\"'+(esc(S.settings.callMeBotNumbers||''))+'\" placeholder=\"27831234567,123456;27829876543,654321\" style=\"width:100%;text-align:left;font-size:.72rem;\"></div>\n    </div>\n    <div class=\"warn-box\">💬 <b>Setup:</b> Save +34 644 71 99 30 → WhatsApp them: I allow callmebot to send me messages → Get API key → Enter phone,apikey</div>\n    <div class=\"sec-hdr">🔔 General</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bar Name</div></div><input class="s-in" id="s-name" value="'+(esc(S.settings.barName))+'"></div>\n      <div class="s-row"><div><div class="slabel">Device Name</div><div class="sdesc">Shows in audit log</div></div><input class="s-in" id="s-dev" value="'+(esc(S.settings.deviceName||'Galaxy Tab'))+'"></div>\n      <div class="s-row"><div><div class="slabel">Currency Symbol</div></div><input class="s-in" id="s-cur" value="'+(esc(S.settings.currency))+'" style="width:70px;"></div>\n      <div class="s-row"><div><div class="slabel">Auto-lock (minutes)</div><div class="sdesc">Lock screen after inactivity</div></div><input class="s-in" id="s-lock" type="number" value="'+(S.settings.autoLockMinutes||30)+'" min="5" style="width:80px;"></div>\n      <div class="s-row"><div><div class="slabel">Admin Names</div><div class="sdesc">For stock alerts (comma-separated)</div></div><input class="s-in" id="s-an" value="'+(esc(S.settings.adminNames))+'"></div>\n      <div class="s-row"><div><div class="slabel">Admin Emails (CC)</div><div class="sdesc">CC on statements/receipts</div></div></div>\n      <div style="padding:0 0 8px;"><input class="s-in" id="s-ae" value="'+(esc(S.settings.adminEmails||''))+'" placeholder="elton@edp.co.za,johanstrydom13@gmail.com" style="width:100%;text-align:left;font-size:.75rem;"></div>\n    </div>\n    <button class="save-btn" onclick="saveAllSettings()">💾 Save All Settings</button>\n    <button class="danger-btn" onclick="clearAllTx()">🗑 Clear All Transactions</button>');
+  document.getElementById('settingsBody').innerHTML=('\n    <div class="info-box">⚙️ Changes save when you tap "Save Settings".</div>\n    <div class="sec-hdr">☁️ Google Sheets Cloud</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Apps Script URL</div><div class="sdesc">Paste deployed Google Apps Script URL</div></div></div>\n      <div style="padding:8px 0;"><input class="s-in" id="s-sheets" value="'+(esc(S.settings.sheetsUrl))+'" placeholder="https://script.google.com/macros/s/..." style="width:100%;text-align:left;font-size:.72rem;"></div>\n    </div>\n    <div class="warn-box">📋 <b>Setup:</b> Google Sheets → Extensions → Apps Script → Paste code → Deploy as Web App → Copy URL above</div>\n    <button onclick="downloadAppsScript()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius-sm);cursor:pointer;font-size:.83rem;width:100%;margin-bottom:13px;">📥 Download Apps Script Code</button>\n    <div class="sec-hdr">📱 SMS (SMSPortal)</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Username</div></div><input class="s-in" id="s-su" value="'+(esc(S.settings.smsUser))+'"></div>\n      <div class="s-row"><div><div class="slabel">Password</div></div><input class="s-in" id="s-sp" type="password" value="'+(esc(S.settings.smsPass))+'"></div>\n      <div class="s-row"><div><div class="slabel">Sender Name</div><div class="sdesc">Max 11 chars</div></div><input class="s-in" id="s-ss" value="'+(esc(S.settings.smsSender))+'" maxlength="11"></div>\n    </div>\n    <div class="sec-hdr">📬 Telegram Alerts</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bot Token</div></div><input class="s-in" id="s-tt" type="password" value="'+(esc(S.settings.telegramToken))+'"></div>\n      <div class="s-row"><div><div class="slabel">Chat/Group ID</div></div><input class="s-in" id="s-tc" value="'+(esc(S.settings.telegramChatId))+'"></div>\n    </div>\n    <div class="sec-hdr">💬 WhatsApp Alerts (CallMeBot)</div>\n    <div class=\"settings-card\">\n      <div class=\"s-row\"><div><div class=\"slabel\">Admin Numbers</div><div class=\"sdesc\">phone,apikey per admin (semicolon separated)</div></div></div>\n      <div style=\"padding:0 0 8px;\"><input class=\"s-in\" id=\"s-cmb\" value=\"'+(esc(S.settings.callMeBotNumbers||''))+'\" placeholder=\"27831234567,123456;27829876543,654321\" style=\"width:100%;text-align:left;font-size:.72rem;\"></div>\n    </div>\n    <div class=\"warn-box\">💬 <b>Setup:</b> Save +34 644 71 99 30 → WhatsApp them: I allow callmebot to send me messages → Get API key → Enter phone,apikey</div>\n    <div class=\"sec-hdr">🔔 General</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bar Name</div></div><input class="s-in" id="s-name" value="'+(esc(S.settings.barName))+'"></div>\n      <div class="s-row"><div><div class="slabel">Device Name</div><div class="sdesc">Shows in audit log</div></div><input class="s-in" id="s-dev" value="'+(esc(S.settings.deviceName||'Galaxy Tab'))+'"></div>\n      <div class="s-row"><div><div class="slabel">Currency Symbol</div></div><input class="s-in" id="s-cur" value="'+(esc(S.settings.currency))+'" style="width:70px;"></div>\n      <div class="s-row"><div><div class="slabel">Auto-lock (minutes)</div><div class="sdesc">Lock screen after inactivity</div></div><input class="s-in" id="s-lock" type="number" value="'+(S.settings.autoLockMinutes||30)+'" min="5" style="width:80px;"></div>\n      <div class="s-row"><div><div class="slabel">Admin Names</div><div class="sdesc">For stock alerts (comma-separated)</div></div><input class="s-in" id="s-an" value="'+(esc(S.settings.adminNames))+'"></div>\n      <div class="s-row"><div><div class="slabel">Admin Emails (CC)</div><div class="sdesc">CC on statements/receipts</div></div></div>\n      <div style="padding:0 0 8px;"><input class="s-in" id="s-ae" value="'+(esc(S.settings.adminEmails||''))+'" placeholder="elton@edp.co.za,johanstrydom13@gmail.com" style="width:100%;text-align:left;font-size:.75rem;"></div>\n    </div>\n    <button class="save-btn" onclick="saveAllSettings()">💾 Save All Settings</button>\n    <button class="danger-btn" onclick="clearAllTx()">🗑 Clear All Transactions</button>\n    <div style=\"text-align:center;padding:16px 0 8px;font-size:.68rem;color:var(--muted);opacity:.5;\">CCC Bar Tab v'+APP_VERSION+' ('+APP_BUILD+')</div>');
 }
 
 function saveAllSettings(){
@@ -2022,7 +2183,7 @@ async function doSendEmail(){
   let ccList=[];
   if(ccAdmins){
     // Find admin users' email - use hardcoded admin emails from settings
-    const adminEmails=(S.settings.adminEmails||'elton@edp.co.za,johanstrydom13@gmail.com').split(',').map(e=>e.trim()).filter(Boolean);
+    const adminEmails=(S.settings.adminEmails||'elton@edp.co.za,johanstrydom13@gmail.com,aletbosman@gmail.com').split(',').map(e=>e.trim()).filter(Boolean);
     ccList=adminEmails.filter(e=>e!==_emailTo); // don't CC the recipient
   }
 
@@ -2196,7 +2357,7 @@ async function bulkEmailOwed(){
   const targets=S.members.filter(m=>bal(m.id)<0&&m.email&&m.email.trim());
   if(!targets.length){toast('⚠️ No members with email addresses owe money');return;}
   const url=S.settings.sheetsUrl;
-  const ccAdmins=(S.settings.adminEmails||'elton@edp.co.za,johanstrydom13@gmail.com').split(',').map(e=>e.trim()).filter(Boolean);
+  const ccAdmins=(S.settings.adminEmails||'elton@edp.co.za,johanstrydom13@gmail.com,aletbosman@gmail.com').split(',').map(e=>e.trim()).filter(Boolean);
   const ccStr=ccAdmins.join(',');
   const balDate=new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'});
   const noEmail=S.members.filter(m=>bal(m.id)<0&&(!m.email||!m.email.trim()));
