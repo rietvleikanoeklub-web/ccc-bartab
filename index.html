@@ -2,9 +2,14 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.21  (2026-03-24)                              ║
+  ║  Version: 4.22  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.22 2026-03-26  Merged Drinks & Stock into one screen  ║
+  ║                    3 tabs: Stock Count / Manage / Purchases║
+  ║                    Import with categories & Replace All    ║
+  ║                    Stock grouped by category               ║
+  ║                    Removed duplicate Stock Levels screen   ║
   ║  v4.21 2026-03-24  Drink import with categories           ║
   ║                    Replace All Drinks option on import     ║
   ║                    Stock grouped by category               ║
@@ -40,7 +45,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.21">
+<meta name="app-version" content="4.22">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -703,6 +708,9 @@ select.fin{cursor:pointer;}
       <div style="flex:1;"><label class="edit-label">Stock Qty</label><input id="ed-stock" class="fin" type="number" placeholder="0" min="0" style="width:100%;"></div>
       <div style="flex:1;"><label class="edit-label">Low Alert ≤</label><input id="ed-threshold" class="fin" type="number" placeholder="5" min="0" style="width:100%;"></div>
     </div>
+    <label class="edit-label" style="margin-top:7px;">Category</label>
+    <input id="ed-category" class="fin" type="text" placeholder="Beer, Wine, Cider, Soda..." list="catList" style="width:100%;margin-bottom:7px;">
+    <datalist id="catList"><option value="Beer"><option value="Wine"><option value="Cider"><option value="Soda"><option value="Water"><option value="Spirits"><option value="Energy"><option value="Snacks"></datalist>
     <div class="mbox-btns">
       <button class="mb-cancel" onclick="closeEditDrink()">Cancel</button>
       <button class="mb-ok g" onclick="saveEditDrink()">Save</button>
@@ -920,8 +928,19 @@ select.fin{cursor:pointer;}
 <div class="screen" id="sStock">
   <div class="hdr">
     <button class="back-btn" onclick="goTo('sHome')">←</button>
-    <div class="hdr-title"><h1>Stock Levels</h1></div>
-    <div class="hdr-actions"><button class="hdr-btn" onclick="openStockPurch()">+ Purchase</button></div>
+    <div class="hdr-title"><h1>Drinks & Stock</h1></div>
+    <div class="hdr-actions">
+      <button class="hdr-btn" onclick="openImport('drinks')">📥</button>
+      <button class="hdr-btn" onclick="openEditDrink(null)">+ Add</button>
+      <button class="hdr-btn" onclick="openStockPurch()">+ Buy</button>
+    </div>
+  </div>
+  <div style="padding:8px 13px 0;flex-shrink:0;">
+    <div style="display:flex;gap:6px;">
+      <button class="fchip on" id="dstab-stock" onclick="dsTab('stock')">📦 Stock Count</button>
+      <button class="fchip" id="dstab-manage" onclick="dsTab('manage')">⚙️ Manage</button>
+      <button class="fchip" id="dstab-history" onclick="dsTab('history')">📋 Purchases</button>
+    </div>
   </div>
   <div class="body" id="stockBody"></div>
 </div>
@@ -950,20 +969,7 @@ select.fin{cursor:pointer;}
   <div class="body" id="memManBody"></div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     SCREEN: MANAGE DRINKS
-═══════════════════════════════════════════ -->
-<div class="screen" id="sDrinkMan">
-  <div class="hdr">
-    <button class="back-btn" onclick="goTo('sManager')">←</button>
-    <div class="hdr-title"><h1>Drinks &amp; Prices</h1></div>
-    <div class="hdr-actions">
-      <button class="hdr-btn" onclick="openImport('drinks')">📥 Import</button>
-      <button class="hdr-btn" onclick="openEditDrink(null)">+ Add</button>
-    </div>
-  </div>
-  <div class="body" id="drinkManBody"></div>
-</div>
+<!-- sDrinkMan removed — merged into sStock -->
 
 <!-- ═══════════════════════════════════════════
      SCREEN: REPORTS
@@ -1014,8 +1020,8 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.21';
-const APP_BUILD = '2026-03-24';
+const APP_VERSION = '4.22';
+const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL
@@ -1437,7 +1443,8 @@ function goTo(id){
   if(id==='sMemberList'){ if(typeof memberFilter!=='undefined' && !window._keepFilter) memberFilter='all'; window._keepFilter=false; renderMList(); }
   if(id==='sManager') renderManager();
   if(id==='sMemMan') renderMemMan();
-  if(id==='sDrinkMan') renderDrinkMan();
+  if(id==='sDrinkMan'){ dsTab('manage'); id='sStock'; }
+  if(id==='sStock') renderStock();
   if(id==='sStock') renderStock();
   if(id==='sReports') renderReports();
   if(id==='sSettings') renderSettings();
@@ -1472,7 +1479,7 @@ function renderHome(){
     +'</button>'
     +'<button class="menu-btn" onclick="goTo(\'sStock\')">'
     +'<div class="menu-icon">🍺</div>'
-    +'<div class="menu-text"><h3>Stock Levels</h3><p>'+(low?('⚠️ '+low+' item(s) low'):'All stock OK ✅')+'</p></div>'
+    +'<div class="menu-text"><h3>Drinks & Stock</h3><p>'+(low?('⚠️ '+low+' item(s) low'):'All stock OK ✅')+'</p></div>'
     +'</button>'
     +'<button class="menu-btn '+(isOp?'locked':'')+'" onclick="'+(isOp?'toast(\'⛔ Manager access required\')':'goTo(\'sManager\')')+'">'
     +'<div class="menu-icon">⚙️</div>'
@@ -1731,8 +1738,8 @@ let editingDrinkId=null, editDrinkImgType='emoji', editDrinkEmoji='🍺', editDr
 function openEditDrink(id){
   editingDrinkId=id; editDrinkImgType='emoji'; editDrinkEmoji='🍺'; editDrinkPhoto=null; editDrinkLogoUrl='';
   document.getElementById('editDrinkTitle').textContent=!id?'➕ New Drink':'✏️ Edit Drink';
-  if(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); document.getElementById('ed-name').value=dk.name||''; document.getElementById('ed-price').value=dk.price||''; document.getElementById('ed-stock').value=dk.stock||0; document.getElementById('ed-threshold').value=dk.threshold||5; editDrinkImgType=dk.imgType||'emoji'; if(dk.imgType==='emoji')editDrinkEmoji=dk.img; else if(dk.imgType==='logo'){editDrinkLogoUrl=dk.img;document.getElementById('ed-logourl').value=dk.img;} else if(dk.imgType==='photo')editDrinkPhoto=dk.img; }
-  else { document.getElementById('ed-name').value=''; document.getElementById('ed-price').value=''; document.getElementById('ed-stock').value='0'; document.getElementById('ed-threshold').value='5'; }
+  if(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); document.getElementById('ed-name').value=dk.name||''; document.getElementById('ed-price').value=dk.price||''; document.getElementById('ed-stock').value=dk.stock||0; document.getElementById('ed-threshold').value=dk.threshold||5; document.getElementById('ed-category').value=dk.category||''; editDrinkImgType=dk.imgType||'emoji'; if(dk.imgType==='emoji')editDrinkEmoji=dk.img; else if(dk.imgType==='logo'){editDrinkLogoUrl=dk.img;document.getElementById('ed-logourl').value=dk.img;} else if(dk.imgType==='photo')editDrinkPhoto=dk.img; }
+  else { document.getElementById('ed-name').value=''; document.getElementById('ed-price').value=''; document.getElementById('ed-stock').value='0'; document.getElementById('ed-threshold').value='5'; document.getElementById('ed-category').value=''; }
   buildEmojiPicker(); switchImgType(editDrinkImgType); document.getElementById('editDrinkMov').classList.add('on');
 }
 function buildEmojiPicker(){ document.getElementById('emoji-picker').innerHTML=EMOJIS.map(e=>('<span onclick="selEmoji(\''+(e)+'\')" style="font-size:1.35rem;padding:6px;border-radius:8px;cursor:pointer;background:var(--surface2);border:2px solid '+(e===editDrinkEmoji?'var(--accent)':'transparent')+';display:inline-block;">'+(e)+'</span>')).join(''); }
@@ -1757,7 +1764,20 @@ function saveEditDrink(){
 // ═══════════════════════════════════════════════════════════
 // STOCK
 // ═══════════════════════════════════════════════════════════
+let dsTabMode='stock';
+function dsTab(mode){
+  dsTabMode=mode;
+  ['stock','manage','history'].forEach(m=>{
+    const el=document.getElementById('dstab-'+m);
+    if(el) el.className='fchip'+(m===mode?' on':'');
+  });
+  renderStock();
+}
+
 function renderStock(){
+  if(dsTabMode==='manage') return renderDrinkManage();
+  if(dsTabMode==='history') return renderStockHistory();
+  // STOCK COUNT TAB
   const low=S.drinks.filter(d=>d.stock<=d.threshold);
   let html=low.length?('<div class="warn-box">⚠️ '+(low.length)+' item(s) low: '+(low.map(d=>d.name).join(', '))+'</div>'):'';
   // Group by category
@@ -1771,12 +1791,44 @@ function renderStock(){
     html+='<div style="margin:12px 0 8px;font-family:\'Barlow Condensed\',sans-serif;font-size:.78rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">'+esc(cat)+' ('+drinks.length+')</div>';
     html+=drinks.map(dk=>{
       const isLow=dk.stock<=dk.threshold; const isOut=dk.stock<=0;
-      return ('<div class="stock-card">\n      <div class="stock-img">'+(drinkImgHtml(dk,'48px'))+'</div>\n      <div class="stock-info"><div class="sn">'+(esc(dk.name))+'</div><div class="sp">'+(S.settings.currency)+(dk.price.toFixed(2))+' · Alert ≤ '+(dk.threshold)+'</div></div>\n      <div class="stock-qty">\n        <div class="sq '+(isOut?'out':isLow?'low':'')+'">'+(dk.stock)+'</div>\n        <div class="sl">in stock</div>\n        <div class="stock-adj">\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',-1)">−</button>\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',1)" style="background:var(--green);color:white;">+</button>\n        </div>\n      </div>\n    </div>');
+      return ('<div class="stock-card">\n      <div class="stock-img">'+(drinkImgHtml(dk,'48px'))+'</div>\n      <div class="stock-info"><div class="sn">'+(esc(dk.name))+'</div><div class="sp">'+(S.settings.currency)+(dk.price.toFixed(2))+' · Alert ≤ '+(dk.threshold)+(dk.category?' · '+dk.category:'')+'</div></div>\n      <div class="stock-qty">\n        <div class="sq '+(isOut?'out':isLow?'low':'')+'">'+(dk.stock)+'</div>\n        <div class="sl">in stock</div>\n        <div class="stock-adj">\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',-1)">−</button>\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',1)" style="background:var(--green);color:white;">+</button>\n        </div>\n      </div>\n    </div>');
     }).join('');
   });
-  const purchases=[...S.stock_purchases].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
-  html+='<div style="margin:16px 0 8px;font-family:\'Barlow Condensed\',sans-serif;font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">Stock Purchase History</div>';
-  html+=!purchases.length?'<div class="empty"><div class="ei">📦</div><p>No purchases yet</p></div>':purchases.map(p=>{
+  if(!S.drinks.length) html='<div class="empty"><div class="ei">🍺</div><p>No drinks yet — tap Import or + Purchase</p></div>';
+  document.getElementById('stockBody').innerHTML=html;
+}
+
+function renderDrinkManage(){
+  let html='<button onclick="openAddDrink()" style="width:100%;padding:12px;background:var(--accent);border:none;border-radius:var(--radius-sm);color:var(--bg);font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:.95rem;cursor:pointer;margin-bottom:10px;">➕ Add New Drink</button>';
+  const categories=new Map();
+  S.drinks.forEach(dk=>{
+    const cat=dk.category||'Other';
+    if(!categories.has(cat)) categories.set(cat,[]);
+    categories.get(cat).push(dk);
+  });
+  categories.forEach((drinks,cat)=>{
+    html+='<div style="margin:12px 0 6px;font-family:\'Barlow Condensed\',sans-serif;font-size:.78rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">'+esc(cat)+'</div>';
+    html+=drinks.map(dk=>{
+      return '<div class="drink-row" onclick="openEditDrink(\''+dk.id+'\')">'
+        +'<div class="dr-img">'+drinkImgHtml(dk,'36px')+'</div>'
+        +'<div class="dr-info"><div class="dr-name">'+esc(dk.name)+'</div>'
+        +'<div class="dr-meta">'
+        +'<span class="dr-chip">'+S.settings.currency+' '+dk.price.toFixed(0)+'</span>'
+        +'<span class="dr-chip">Stk: '+dk.stock+'</span>'
+        +'<span class="dr-chip">Alert≤ '+dk.threshold+'</span>'
+        +(dk.category?'<span class="dr-chip">'+dk.category+'</span>':'')
+        +'</div></div>'
+        +'<button class="del-btn" onclick="event.stopPropagation();delDrink(\''+dk.id+'\')">🗑</button>'
+        +'</div>';
+    }).join('');
+  });
+  if(!S.drinks.length) html+='<div class="empty"><div class="ei">🍺</div><p>No drinks — tap Import or Add</p></div>';
+  document.getElementById('stockBody').innerHTML=html;
+}
+
+function renderStockHistory(){
+  const purchases=[...S.stock_purchases].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,20);
+  let html=!purchases.length?'<div class="empty"><div class="ei">📦</div><p>No stock purchases recorded yet</p></div>':purchases.map(p=>{
     const dk=S.drinks.find(x=>String(x.id)===String(p.drinkId)); const buyer=S.members.find(x=>String(x.id)===String(p.paidBy));
     return ('<div class="tx-item">\n      <div class="tx-left">\n        <div class="txd">'+(fmtDate(p.date))+'</div>\n        <div class="txn">'+(dk?dk.name:'?')+' ×'+(p.qty)+' · '+(buyer?buyer.name:'?')+' '+(p.notes?'· '+p.notes:'')+'</div>\n        <div class="txu"><span class="audit-chip"><span class="ac-dot" style="background:'+(userColor(p.enteredBy))+'"></span>'+(p.enteredByName||'?')+'</span></div>\n      </div>\n      <div class="tx-amt tx-credit">'+(S.settings.currency)+((p.cost||0).toFixed(2))+'</div>\n    </div>');
   }).join('');
@@ -1823,7 +1875,7 @@ function renderManager(){
     adminHtml='<div class="sec-hdr">Admin</div>\n    <div class="action-row" onclick="goTo(\'sUsers\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">👤</div><div class="ar-text"><h3>User Accounts</h3><p>PINs · roles · access levels</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sSettings\')"><div class="ar-icon" style="background:rgba(127,160,160,.18)">⚙️</div><div class="ar-text"><h3>Settings</h3><p>Device · cloud · SMS · Telegram</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Data Import</div>\n    <div class="action-row" onclick="openHistoryImport()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📜</div><div class="ar-text"><h3>Import Old App History</h3><p>Import transactions from previous CCC Bar app Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(46,204,113,.3)" onclick="cleanReimport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3 style="color:var(--green)">Clean Reimport (One Click)</h3><p>Clear + Import + Force Push — no sync interference</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="fixDuplicateBalances()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">🔧</div><div class="ar-text"><h3>Fix Duplicate Balances</h3><p>Remove balance corrections created during member import</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="debugTransactions()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">🔍</div><div class="ar-text"><h3>Debug Transactions</h3><p>Show transaction analysis report</p></div><div class="ar-chev">›</div></div>\n    <hr class="divider">\n    <div class="action-row" style="border-color:rgba(231,76,60,.3)" onclick="clearAllTx()"><div class="ar-icon" style="background:rgba(231,76,60,.12)">🗑</div><div class="ar-text"><h3 style="color:var(--red)">Clear All Transactions</h3><p>Reset all balances — cannot be undone</p></div></div>';
   }
   const lowText=low?('⚠️ '+low+' item(s) low'):'All stock OK';
-  document.getElementById('managerBody').innerHTML=('\n    <div class="sec-hdr">Members</div>\n    <div class="action-row" onclick="goTo(\'sMemMan\')"><div class="ar-icon" style="background:rgba(0,136,204,.18)">👥</div><div class="ar-text"><h3>Manage Members</h3><p>Add · edit · photos · import</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Bar Menu &amp; Stock</div>\n    <div class="action-row" onclick="goTo(\'sDrinkMan\')"><div class="ar-icon" style="background:rgba(39,174,96,.18)">🍺</div><div class="ar-text"><h3>Drinks &amp; Prices</h3><p>Logos · photos · prices · stock thresholds</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sStock\')"><div class="ar-icon" style="background:rgba(243,156,18,.18)">📦</div><div class="ar-text"><h3>Stock Levels</h3><p>'+(lowText)+'</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Notifications</div>\n    <div class="action-row" onclick="sendAllSMS()"><div class="ar-icon" style="background:rgba(230,126,34,.18)">📱</div><div class="ar-text"><h3>SMS All Members</h3><p>Bulk balance SMS to all members</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendLowStockAlert()"><div class="ar-icon" style="background:rgba(41,182,246,.18)">📬</div><div class="ar-text"><h3>Send Low Stock Alert</h3><p>Telegram + SMS to admins now</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Cloud</div>\n    <div class="action-row" onclick="fetchFromCloud()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">☁️</div><div class="ar-text"><h3>Merge Sync</h3><p>Pull cloud data and merge with local</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="syncNow(true)"><div class="ar-icon" style="background:rgba(0,212,255,.18)">⬆️</div><div class="ar-text"><h3>Save to Cloud</h3><p>Push all data to Google Sheets now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(243,156,18,.3)" onclick="forcePushToCloud()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">⚡</div><div class="ar-text"><h3 style="color:var(--orange)">Force Push (Overwrite Cloud)</h3><p>Replace cloud with this device</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="initFromCloud()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3>Initialize Device</h3><p>First-time setup — download all from cloud</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Reports &amp; Audit</div>\n    <div class="action-row" onclick="goTo(\'sReports\')"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📊</div><div class="ar-text"><h3>Reports &amp; Export</h3><p>Balance sheets · stock · Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>Audit Log</h3><p>Full record of who did what and when</p></div><div class="ar-chev">›</div></div>\n    '+(adminHtml));
+  document.getElementById('managerBody').innerHTML=('\n    <div class="sec-hdr">Members</div>\n    <div class="action-row" onclick="goTo(\'sMemMan\')"><div class="ar-icon" style="background:rgba(0,136,204,.18)">👥</div><div class="ar-text"><h3>Manage Members</h3><p>Add · edit · photos · import</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Bar Menu &amp; Stock</div>\n    <div class="action-row" onclick="goTo(\'sStock\');"><div class="ar-icon" style="background:rgba(39,174,96,.18)">🍺</div><div class="ar-text"><h3>Drinks &amp; Stock</h3><p>Prices · stock levels · categories · import</p></div><div class="ar-chev">›</div></div>\n    \n    <div class="sec-hdr">Notifications</div>\n    <div class="action-row" onclick="sendAllSMS()"><div class="ar-icon" style="background:rgba(230,126,34,.18)">📱</div><div class="ar-text"><h3>SMS All Members</h3><p>Bulk balance SMS to all members</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendLowStockAlert()"><div class="ar-icon" style="background:rgba(41,182,246,.18)">📬</div><div class="ar-text"><h3>Send Low Stock Alert</h3><p>Telegram + SMS to admins now</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Cloud</div>\n    <div class="action-row" onclick="fetchFromCloud()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">☁️</div><div class="ar-text"><h3>Merge Sync</h3><p>Pull cloud data and merge with local</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="syncNow(true)"><div class="ar-icon" style="background:rgba(0,212,255,.18)">⬆️</div><div class="ar-text"><h3>Save to Cloud</h3><p>Push all data to Google Sheets now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(243,156,18,.3)" onclick="forcePushToCloud()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">⚡</div><div class="ar-text"><h3 style="color:var(--orange)">Force Push (Overwrite Cloud)</h3><p>Replace cloud with this device</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="initFromCloud()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3>Initialize Device</h3><p>First-time setup — download all from cloud</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Reports &amp; Audit</div>\n    <div class="action-row" onclick="goTo(\'sReports\')"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📊</div><div class="ar-text"><h3>Reports &amp; Export</h3><p>Balance sheets · stock · Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>Audit Log</h3><p>Full record of who did what and when</p></div><div class="ar-chev">›</div></div>\n    '+(adminHtml));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1849,17 +1901,12 @@ function delMember(id){
   }));
 }
 
-function renderDrinkMan(){
-  let html='';
-  if(!S.drinks.length) html='<div class="empty"><div class="ei">🍺</div><p>No drinks yet</p></div>';
-  else html=S.drinks.map(dk=>{
-    return ('<div class="dm-item">\n      <div class="dm-thumb" onclick="openEditDrink(\''+(dk.id)+'\')">'+(drinkImgHtml(dk,'40px'))+'</div>\n      <div class="dm-info">\n        <input value="'+(esc(dk.name))+'" onchange="updDrink(\''+(dk.id)+'\',\'name\',this.value)" placeholder="Name">\n        <div class="dm-row2">\n          <div class="price-wrap"><span>'+(S.settings.currency)+'</span><input type="number" value="'+(dk.price)+'" step="5" min="1" onchange="updDrink(\''+(dk.id)+'\',\'price\',parseFloat(this.value))"></div>\n          <div class="stock-wrap"><span>Stk:</span><input type="number" value="'+(dk.stock)+'" min="0" onchange="updDrink(\''+(dk.id)+'\',\'stock\',parseInt(this.value))" style="'+(dk.stock<=dk.threshold?'color:var(--orange);':'')+'"></div>\n          <div class="stock-wrap"><span>Alert≤</span><input type="number" value="'+(dk.threshold)+'" min="0" onchange="updDrink(\''+(dk.id)+'\',\'threshold\',parseInt(this.value))"></div>\n        </div>\n      </div>\n      <button class="del-btn" onclick="delDrink(\''+(dk.id)+'\')">🗑</button>\n    </div>');
-  }).join('');
-  document.getElementById('drinkManBody').innerHTML=html;
-}
+function renderDrinkMan(){ dsTabMode='manage'; renderStock(); }
 
 function updDrink(id,f,v){ const dk=S.drinks.find(x=>String(x.id)===String(id)); if(dk){dk[f]=v;saveLocal();syncNow(false,true);} }
-function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});S.drinks=S.drinks.filter(x=>String(x.id)!==String(id));saveLocal();syncNow(false,true);renderDrinkMan();toast('🗑 Removed');})); }
+function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});S.drinks=S.drinks.filter(x=>String(x.id)!==String(id));saveLocal();syncNow(false,true);renderStock();toast('🗑 Removed');})); }
+
+function openAddDrink(){ openEditDrink(null); }
 
 // ═══════════════════════════════════════════════════════════
 // AUDIT LOG SCREEN
@@ -2533,7 +2580,7 @@ function doImport(){ if(!importData.length){toast('⚠️ No data');return;} let
   const replaceAll=document.getElementById('importReplace').checked;
   if(replaceAll) S.drinks=[];
   importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const price=parseFloat(row.Price||row.price||0)||0;const stock=parseInt(row.Stock||row.stock||0)||0;const threshold=parseInt(row.LowAlert||row.Threshold||row.Alert||5)||5;const emoji=(row.Emoji||row.emoji||'🍺').trim();const category=(row.Category||row.category||'').trim();const ex=S.drinks.find(d=>d.name.toLowerCase()===name.toLowerCase());if(ex){if(price>0)ex.price=price;ex.stock=stock;ex.threshold=threshold;if(category)ex.category=category;if(emoji&&emoji!=='🍺')ex.img=emoji;updated++;}else{S.drinks.push({id:uid(),name,imgType:'emoji',img:emoji,price,stock,threshold,category});added++;}});auditLog(('Imported '+(added)+' drinks, updated '+(updated)+(replaceAll?' (replaced all)':'')),'admin',{});}
-  toast(('✅ '+(added)+' added, '+(updated)+' updated')); saveLocal(); syncNow(); closeImport(); if(importMode==='members')renderMemMan();else renderDrinkMan(); }
+  toast(('✅ '+(added)+' added, '+(updated)+' updated')); saveLocal(); syncNow(); closeImport(); if(importMode==='members')renderMemMan();else{dsTabMode='stock';renderStock();} }
 
 // ═══════════════════════════════════════════════════════════
 // HISTORY IMPORT (Old CCC Bar App)
