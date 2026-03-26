@@ -2,9 +2,15 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.20  (2026-03-21)                              ║
+  ║  Version: 4.21  (2026-03-24)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.21 2026-03-24  Drink import with categories           ║
+  ║                    Replace All Drinks option on import     ║
+  ║                    Stock grouped by category               ║
+  ║                    Alet email added to admin CC             ║
+  ║                    Stock sync fix (preserve local changes) ║
+  ║                    Better drink template with SA drinks    ║
   ║  v4.20 2026-03-21  Version tracking added to app UI       ║
   ║                    Font sizes increased for phones         ║
   ║                    Alet email added to admin CC            ║
@@ -34,7 +40,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.20">
+<meta name="app-version" content="4.21">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -778,6 +784,12 @@ select.fin{cursor:pointer;}
       <div style="background:var(--bg);border-radius:8px;padding:10px;font-size:.72rem;font-family:monospace;color:var(--muted);max-height:160px;overflow-y:auto;margin-bottom:8px;" id="importPrevText"></div>
       <div id="importSummary" style="font-size:.8rem;color:var(--green);margin-bottom:8px;"></div>
     </div>
+    <div id="importReplaceWrap" style="display:none;padding:8px 0;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:.82rem;cursor:pointer;">
+        <input type="checkbox" id="importReplace" style="width:18px;height:18px;">
+        <span>Replace all existing drinks (recommended for fresh setup)</span>
+      </label>
+    </div>
     <div class="mbox-btns">
       <button class="mb-cancel" onclick="closeImport()">Cancel</button>
       <button id="importOk" class="mb-ok g" onclick="doImport()" disabled style="opacity:.4;">Import</button>
@@ -1002,8 +1014,8 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.20';
-const APP_BUILD = '2026-03-21';
+const APP_VERSION = '4.21';
+const APP_BUILD = '2026-03-24';
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL
@@ -1748,11 +1760,20 @@ function saveEditDrink(){
 function renderStock(){
   const low=S.drinks.filter(d=>d.stock<=d.threshold);
   let html=low.length?('<div class="warn-box">⚠️ '+(low.length)+' item(s) low: '+(low.map(d=>d.name).join(', '))+'</div>'):'';
-  html+='<div style="margin-bottom:8px;font-family:\'Barlow Condensed\',sans-serif;font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">Fridge Inventory</div>';
-  html+=S.drinks.map(dk=>{
-    const isLow=dk.stock<=dk.threshold; const isOut=dk.stock<=0;
-    return ('<div class="stock-card">\n      <div class="stock-img">'+(drinkImgHtml(dk,'48px'))+'</div>\n      <div class="stock-info"><div class="sn">'+(esc(dk.name))+'</div><div class="sp">'+(S.settings.currency)+(dk.price.toFixed(2))+' · Alert ≤ '+(dk.threshold)+'</div></div>\n      <div class="stock-qty">\n        <div class="sq '+(isOut?'out':isLow?'low':'')+'">'+(dk.stock)+'</div>\n        <div class="sl">in stock</div>\n        <div class="stock-adj">\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',-1)">−</button>\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',1)" style="background:var(--green);color:white;">+</button>\n        </div>\n      </div>\n    </div>');
-  }).join('');
+  // Group by category
+  const categories=new Map();
+  S.drinks.forEach(dk=>{
+    const cat=dk.category||'Other';
+    if(!categories.has(cat)) categories.set(cat,[]);
+    categories.get(cat).push(dk);
+  });
+  categories.forEach((drinks,cat)=>{
+    html+='<div style="margin:12px 0 8px;font-family:\'Barlow Condensed\',sans-serif;font-size:.78rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">'+esc(cat)+' ('+drinks.length+')</div>';
+    html+=drinks.map(dk=>{
+      const isLow=dk.stock<=dk.threshold; const isOut=dk.stock<=0;
+      return ('<div class="stock-card">\n      <div class="stock-img">'+(drinkImgHtml(dk,'48px'))+'</div>\n      <div class="stock-info"><div class="sn">'+(esc(dk.name))+'</div><div class="sp">'+(S.settings.currency)+(dk.price.toFixed(2))+' · Alert ≤ '+(dk.threshold)+'</div></div>\n      <div class="stock-qty">\n        <div class="sq '+(isOut?'out':isLow?'low':'')+'">'+(dk.stock)+'</div>\n        <div class="sl">in stock</div>\n        <div class="stock-adj">\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',-1)">−</button>\n          <button class="sadj" onclick="adjStock(\''+(dk.id)+'\',1)" style="background:var(--green);color:white;">+</button>\n        </div>\n      </div>\n    </div>');
+    }).join('');
+  });
   const purchases=[...S.stock_purchases].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
   html+='<div style="margin:16px 0 8px;font-family:\'Barlow Condensed\',sans-serif;font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">Stock Purchase History</div>';
   html+=!purchases.length?'<div class="empty"><div class="ei">📦</div><p>No purchases yet</p></div>':purchases.map(p=>{
@@ -2480,11 +2501,38 @@ async function sendLowStockAlert(){
 // IMPORT
 // ═══════════════════════════════════════════════════════════
 let importMode='members',importData=[];
-function openImport(mode){ importMode=mode; importData=[]; document.getElementById('importTitle').textContent=mode==='members'?'📥 Import Members':'📥 Import Drinks'; document.getElementById('importDesc').textContent=mode==='members'?'Import members with opening balances from Excel or CSV.':'Import drinks, prices and stock from Excel or CSV.'; document.getElementById('importPreview').style.display='none'; document.getElementById('importOk').disabled=true; document.getElementById('importOk').style.opacity='.4'; document.getElementById('importFile').value=''; document.getElementById('importMov').classList.add('on'); }
+function openImport(mode){ importMode=mode; importData=[]; document.getElementById('importTitle').textContent=mode==='members'?'📥 Import Members':'📥 Import Drinks'; document.getElementById('importDesc').textContent=mode==='members'?'Import members from Excel or CSV.':'Import drinks, prices and stock from Excel or CSV.'; document.getElementById('importPreview').style.display='none'; document.getElementById('importOk').disabled=true; document.getElementById('importOk').style.opacity='.4'; document.getElementById('importFile').value=''; document.getElementById('importReplaceWrap').style.display=mode==='drinks'?'block':'none'; document.getElementById('importReplace').checked=false; document.getElementById('importMov').classList.add('on'); }
 function closeImport(){ document.getElementById('importMov').classList.remove('on'); }
-function downloadTemplate(){ const wb=XLSX.utils.book_new(); if(importMode==='members'){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([{Name:'John Smith',Cell:'0821234567',Email:'john@email.com',OpeningBalance:500},{Name:'Jane Doe',Cell:'0834567890',Email:'jane@email.com',OpeningBalance:0}]),'Members');XLSX.writeFile(wb,'CCC_Members_Template.xlsx');}else{XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([{Name:'Beer',Emoji:'🍺',Price:20,Stock:24,LowAlert:6},{Name:'Wine',Emoji:'🍷',Price:25,Stock:12,LowAlert:3}]),'Drinks');XLSX.writeFile(wb,'CCC_Drinks_Template.xlsx');}toast('📄 Template downloaded'); }
-function handleImportFile(input){ const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{const d=new Uint8Array(e.target.result);const wb=XLSX.read(d,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws);importData=rows;document.getElementById('importPrevText').textContent=rows.slice(0,5).map(r=>JSON.stringify(r)).join('\n')+(rows.length>5?('\\n... and '+(rows.length-5)+' more'):'');document.getElementById('importSummary').textContent=('✅ '+(rows.length)+' row(s) found');document.getElementById('importPreview').style.display='block';document.getElementById('importOk').disabled=false;document.getElementById('importOk').style.opacity='1';};r.readAsArrayBuffer(f); }
-function doImport(){ if(!importData.length){toast('⚠️ No data');return;} let added=0,updated=0; if(importMode==='members'){importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const cell=(row.Cell||row.cell||row.Phone||'').toString().trim();const email=(row.Email||row.email||'').trim();const ob=parseFloat(row.OpeningBalance||row.Balance||0)||0;const ex=S.members.find(m=>m.name.toLowerCase()===name.toLowerCase());if(ex){if(cell) ex.cell=cell;if(email) ex.email=email;/* balance corrections disabled — use Import History instead */updated++;}else{const id=uid();S.members.push({id,name,cell,email,photo:null,created:new Date().toISOString()});/* imported balance disabled — use Import History instead */added++;}});auditLog(('Imported '+(added)+' members, updated '+(updated)),'admin',{});}else{importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const price=parseFloat(row.Price||row.price||0)||0;const stock=parseInt(row.Stock||row.stock||0)||0;const threshold=parseInt(row.LowAlert||row.Threshold||5)||5;const emoji=(row.Emoji||row.emoji||'🍺').trim();const ex=S.drinks.find(d=>d.name.toLowerCase()===name.toLowerCase());if(ex){if(price>0)ex.price=price;ex.stock=stock;ex.threshold=threshold;updated++;}else{S.drinks.push({id:uid(),name,imgType:'emoji',img:emoji,price,stock,threshold});added++;}});auditLog(('Imported '+(added)+' drinks, updated '+(updated)),'admin',{});}
+function downloadTemplate(){ const wb=XLSX.utils.book_new(); if(importMode==='members'){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([{Name:'John Smith',Cell:'0821234567',Email:'john@email.com'},{Name:'Jane Doe',Cell:'0834567890',Email:'jane@email.com'}]),'Members');XLSX.writeFile(wb,'CCC_Members_Template.xlsx');}else{XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([
+  {Name:'Castle Lager',Emoji:'🍺',Price:20,Stock:24,LowAlert:6,Category:'Beer'},
+  {Name:'Windhoek Draught',Emoji:'🍻',Price:25,Stock:12,LowAlert:4,Category:'Beer'},
+  {Name:'Windhoek Lager',Emoji:'🍻',Price:25,Stock:12,LowAlert:4,Category:'Beer'},
+  {Name:'Savanna Dry',Emoji:'🍏',Price:25,Stock:12,LowAlert:4,Category:'Cider'},
+  {Name:'Hunters Gold',Emoji:'🍏',Price:25,Stock:12,LowAlert:4,Category:'Cider'},
+  {Name:'Robertson Red',Emoji:'🍷',Price:20,Stock:6,LowAlert:2,Category:'Wine'},
+  {Name:'Robertson White',Emoji:'🥂',Price:20,Stock:6,LowAlert:2,Category:'Wine'},
+  {Name:'Coca-Cola',Emoji:'🥤',Price:15,Stock:24,LowAlert:6,Category:'Soda'},
+  {Name:'Sprite',Emoji:'🥤',Price:15,Stock:12,LowAlert:6,Category:'Soda'},
+  {Name:'Grapetiser',Emoji:'🧃',Price:15,Stock:12,LowAlert:6,Category:'Soda'},
+  {Name:'Water',Emoji:'💧',Price:10,Stock:24,LowAlert:6,Category:'Water'},
+  {Name:'Sterk Stumpie',Emoji:'🥃',Price:20,Stock:6,LowAlert:2,Category:'Spirits'},
+  {Name:'Ginger Beer',Emoji:'🍺',Price:20,Stock:6,LowAlert:3,Category:'Beer'}
+]),'Drinks');XLSX.writeFile(wb,'CCC_Drinks_Template.xlsx');}toast('📄 Template downloaded — edit and re-import'); }
+function handleImportFile(input){ const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{const d=new Uint8Array(e.target.result);const wb=XLSX.read(d,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws);importData=rows;
+  let preview='';
+  if(importMode==='drinks'){
+    preview=rows.slice(0,8).map(r=>(r.Emoji||r.emoji||'🍺')+' '+(r.Name||r.name||'?')+' — R'+(r.Price||r.price||0)+' (stock: '+(r.Stock||r.stock||0)+', alert: '+(r.LowAlert||r.Threshold||r.Alert||5)+')'+(r.Category||r.category?' ['+r.Category+']':'')).join('\n');
+    if(rows.length>8) preview+='\n... and '+(rows.length-8)+' more';
+  } else {
+    preview=rows.slice(0,5).map(r=>JSON.stringify(r)).join('\n');
+    if(rows.length>5) preview+='\n... and '+(rows.length-5)+' more';
+  }
+  document.getElementById('importPrevText').textContent=preview;
+  document.getElementById('importSummary').textContent=('✅ '+(rows.length)+' row(s) found');document.getElementById('importPreview').style.display='block';document.getElementById('importOk').disabled=false;document.getElementById('importOk').style.opacity='1';};r.readAsArrayBuffer(f); }
+function doImport(){ if(!importData.length){toast('⚠️ No data');return;} let added=0,updated=0; if(importMode==='members'){importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const cell=(row.Cell||row.cell||row.Phone||'').toString().trim();const email=(row.Email||row.email||'').trim();const ex=S.members.find(m=>m.name.toLowerCase()===name.toLowerCase());if(ex){if(cell) ex.cell=cell;if(email) ex.email=email;updated++;}else{const id=uid();S.members.push({id,name,cell,email,photo:null,created:new Date().toISOString()});added++;}});auditLog(('Imported '+(added)+' members, updated '+(updated)),'admin',{});}else{
+  const replaceAll=document.getElementById('importReplace').checked;
+  if(replaceAll) S.drinks=[];
+  importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const price=parseFloat(row.Price||row.price||0)||0;const stock=parseInt(row.Stock||row.stock||0)||0;const threshold=parseInt(row.LowAlert||row.Threshold||row.Alert||5)||5;const emoji=(row.Emoji||row.emoji||'🍺').trim();const category=(row.Category||row.category||'').trim();const ex=S.drinks.find(d=>d.name.toLowerCase()===name.toLowerCase());if(ex){if(price>0)ex.price=price;ex.stock=stock;ex.threshold=threshold;if(category)ex.category=category;if(emoji&&emoji!=='🍺')ex.img=emoji;updated++;}else{S.drinks.push({id:uid(),name,imgType:'emoji',img:emoji,price,stock,threshold,category});added++;}});auditLog(('Imported '+(added)+' drinks, updated '+(updated)+(replaceAll?' (replaced all)':'')),'admin',{});}
   toast(('✅ '+(added)+' added, '+(updated)+' updated')); saveLocal(); syncNow(); closeImport(); if(importMode==='members')renderMemMan();else renderDrinkMan(); }
 
 // ═══════════════════════════════════════════════════════════
