@@ -2,9 +2,14 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.23  (2026-03-26)                              ║
+  ║  Version: 4.25  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.25 2026-03-26  WhatsApp stock alert to Elton/Johan/Alet║
+  ║  v4.24 2026-03-26  Low stock alert → shopping list        ║
+  ║                    Sends to Telegram + Email + WhatsApp    ║
+  ║                    WhatsApp opens for sharing to group     ║
+  ║                    Confirmation before sending             ║
   ║  v4.23 2026-03-26  Sync paused during all imports         ║
   ║                    Import auto force-pushes to cloud       ║
   ║                    Stock +/- and purchases force push      ║
@@ -49,7 +54,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.23">
+<meta name="app-version" content="4.25">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1024,7 +1029,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.23';
+const APP_VERSION = '4.25';
 const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
@@ -2540,12 +2545,70 @@ async function sendAllSMS(){
 }
 
 async function sendLowStockAlert(){
-  const low=S.drinks.filter(d=>d.stock<=d.threshold); if(!low.length){toast('✅ All stock levels OK');return;}
-  const plainMsg='⚠️ CCC Bar — Low Stock\n\n'+low.map(d=>'• '+d.name+': '+d.stock+' left (alert ≤'+d.threshold+')').join('\n')+'\n\nPlease restock before Thursday! 🛶';
+  const low=S.drinks.filter(d=>d.stock<=d.threshold); 
+  if(!low.length){toast('✅ All stock levels OK — nothing to restock');return;}
+  
+  // Build shopping list
+  const categories=new Map();
+  low.forEach(d=>{
+    const cat=d.category||'Other';
+    if(!categories.has(cat)) categories.set(cat,[]);
+    categories.get(cat).push(d);
+  });
+  
+  let shoppingList='🛒 CCC Bar — Shopping List\n';
+  shoppingList+=new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'\n\n';
+  categories.forEach((drinks,cat)=>{
+    shoppingList+='📦 '+cat+':\n';
+    drinks.forEach(d=>{
+      const needed=Math.max(d.threshold*2,6)-d.stock;
+      shoppingList+='  • '+d.name+': '+d.stock+' left → buy ~'+Math.max(needed,1)+'\n';
+    });
+    shoppingList+='\n';
+  });
+  shoppingList+='Total items low: '+low.length+'\n';
+  shoppingList+='🛶 CCC Bar — Centurion Canoe Club';
+  
   const tgMsg='⚠️ <b>CCC Bar — Low Stock</b>\n\n'+low.map(d=>'• '+d.name+': <b>'+d.stock+'</b> left (alert ≤'+d.threshold+')').join('\n')+'\n\nPlease restock before Thursday! 🛶';
-  toast('📤 Sending low stock alert…');
-  const ok=await sendAllAdminAlerts(plainMsg, tgMsg);
-  toast(ok?'✅ Low stock alert sent!':'⚠️ No alert channels configured — check Settings');
+  
+  showConf('📤 Send Stock Alert','Send low stock shopping list to:\n\n• Telegram CCC Bar group\n• WhatsApp → Elton, Johan, Alet\n• Email → Elton, Johan, Alet\n\n'+low.length+' item(s) need restocking.','g',async()=>{
+    toast('📤 Sending alerts…');
+    
+    // 1. Telegram
+    await sendTelegram(tgMsg);
+    
+    // 2. CallMeBot WhatsApp
+    await sendCallMeBot(shoppingList);
+    
+    // 3. Email to admins
+    const adminEmails=(S.settings.adminEmails||'').split(',').filter(Boolean);
+    if(adminEmails.length && S.settings.sheetsUrl){
+      try{
+        const payload={action:'sendEmail',to:adminEmails[0],subject:'CCC Bar — Low Stock Shopping List',body:shoppingList,cc:adminEmails.slice(1).join(','),replyTo:'rietvleikanoeklub@gmail.com'};
+        await fetch(S.settings.sheetsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+      }catch(e){}
+    }
+    
+    // 4. Open WhatsApp to each admin one by one
+    const adminPhones=[
+      {name:'Elton',phone:'27833979782'},
+      {name:'Johan',phone:'27834552776'},
+      {name:'Alet',phone:'27823378748'}
+    ];
+    // Open first one immediately, others with delay
+    window.open('https://wa.me/'+adminPhones[0].phone+'?text='+encodeURIComponent(shoppingList),'_blank');
+    toast('💬 WhatsApp opened for '+adminPhones[0].name+' — send it, then come back');
+    let waIdx=1;
+    function nextAdminWA(){
+      if(waIdx>=adminPhones.length){toast('✅ All alerts sent!');return;}
+      const a=adminPhones[waIdx]; waIdx++;
+      window.open('https://wa.me/'+a.phone+'?text='+encodeURIComponent(shoppingList),'_blank');
+      toast('💬 WhatsApp opened for '+a.name+' — send it');
+      setTimeout(nextAdminWA,3000);
+    }
+    setTimeout(nextAdminWA,3000);
+    auditLog('Sent low stock alert: '+low.length+' items','admin',{});
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
