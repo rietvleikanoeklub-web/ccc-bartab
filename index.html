@@ -2,9 +2,11 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.25  (2026-03-26)                              ║
+  ║  Version: 4.26  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.26 2026-03-26  Full stock report to admins             ║
+  ║                    WhatsApp/Telegram/Email with totals     ║
   ║  v4.25 2026-03-26  WhatsApp stock alert to Elton/Johan/Alet║
   ║  v4.24 2026-03-26  Low stock alert → shopping list        ║
   ║                    Sends to Telegram + Email + WhatsApp    ║
@@ -54,7 +56,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.25">
+<meta name="app-version" content="4.26">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1029,7 +1031,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.25';
+const APP_VERSION = '4.26';
 const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
@@ -1884,7 +1886,7 @@ function renderManager(){
     adminHtml='<div class="sec-hdr">Admin</div>\n    <div class="action-row" onclick="goTo(\'sUsers\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">👤</div><div class="ar-text"><h3>User Accounts</h3><p>PINs · roles · access levels</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sSettings\')"><div class="ar-icon" style="background:rgba(127,160,160,.18)">⚙️</div><div class="ar-text"><h3>Settings</h3><p>Device · cloud · SMS · Telegram</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Data Import</div>\n    <div class="action-row" onclick="openHistoryImport()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📜</div><div class="ar-text"><h3>Import Old App History</h3><p>Import transactions from previous CCC Bar app Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(46,204,113,.3)" onclick="cleanReimport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3 style="color:var(--green)">Clean Reimport (One Click)</h3><p>Clear + Import + Force Push — no sync interference</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="fixDuplicateBalances()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">🔧</div><div class="ar-text"><h3>Fix Duplicate Balances</h3><p>Remove balance corrections created during member import</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="debugTransactions()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">🔍</div><div class="ar-text"><h3>Debug Transactions</h3><p>Show transaction analysis report</p></div><div class="ar-chev">›</div></div>\n    <hr class="divider">\n    <div class="action-row" style="border-color:rgba(231,76,60,.3)" onclick="clearAllTx()"><div class="ar-icon" style="background:rgba(231,76,60,.12)">🗑</div><div class="ar-text"><h3 style="color:var(--red)">Clear All Transactions</h3><p>Reset all balances — cannot be undone</p></div></div>';
   }
   const lowText=low?('⚠️ '+low+' item(s) low'):'All stock OK';
-  document.getElementById('managerBody').innerHTML=('\n    <div class="sec-hdr">Members</div>\n    <div class="action-row" onclick="goTo(\'sMemMan\')"><div class="ar-icon" style="background:rgba(0,136,204,.18)">👥</div><div class="ar-text"><h3>Manage Members</h3><p>Add · edit · photos · import</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Bar Menu &amp; Stock</div>\n    <div class="action-row" onclick="goTo(\'sStock\');"><div class="ar-icon" style="background:rgba(39,174,96,.18)">🍺</div><div class="ar-text"><h3>Drinks &amp; Stock</h3><p>Prices · stock levels · categories · import</p></div><div class="ar-chev">›</div></div>\n    \n    <div class="sec-hdr">Notifications</div>\n    <div class="action-row" onclick="sendAllSMS()"><div class="ar-icon" style="background:rgba(230,126,34,.18)">📱</div><div class="ar-text"><h3>SMS All Members</h3><p>Bulk balance SMS to all members</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendLowStockAlert()"><div class="ar-icon" style="background:rgba(41,182,246,.18)">📬</div><div class="ar-text"><h3>Send Low Stock Alert</h3><p>Telegram + SMS to admins now</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Cloud</div>\n    <div class="action-row" onclick="fetchFromCloud()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">☁️</div><div class="ar-text"><h3>Merge Sync</h3><p>Pull cloud data and merge with local</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="syncNow(true)"><div class="ar-icon" style="background:rgba(0,212,255,.18)">⬆️</div><div class="ar-text"><h3>Save to Cloud</h3><p>Push all data to Google Sheets now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(243,156,18,.3)" onclick="forcePushToCloud()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">⚡</div><div class="ar-text"><h3 style="color:var(--orange)">Force Push (Overwrite Cloud)</h3><p>Replace cloud with this device</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="initFromCloud()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3>Initialize Device</h3><p>First-time setup — download all from cloud</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Reports &amp; Audit</div>\n    <div class="action-row" onclick="goTo(\'sReports\')"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📊</div><div class="ar-text"><h3>Reports &amp; Export</h3><p>Balance sheets · stock · Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>Audit Log</h3><p>Full record of who did what and when</p></div><div class="ar-chev">›</div></div>\n    '+(adminHtml));
+  document.getElementById('managerBody').innerHTML=('\n    <div class="sec-hdr">Members</div>\n    <div class="action-row" onclick="goTo(\'sMemMan\')"><div class="ar-icon" style="background:rgba(0,136,204,.18)">👥</div><div class="ar-text"><h3>Manage Members</h3><p>Add · edit · photos · import</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Bar Menu &amp; Stock</div>\n    <div class="action-row" onclick="goTo(\'sStock\');"><div class="ar-icon" style="background:rgba(39,174,96,.18)">🍺</div><div class="ar-text"><h3>Drinks &amp; Stock</h3><p>Prices · stock levels · categories · import</p></div><div class="ar-chev">›</div></div>\n    \n    <div class="sec-hdr">Notifications</div>\n    <div class="action-row" onclick="sendAllSMS()"><div class="ar-icon" style="background:rgba(230,126,34,.18)">📱</div><div class="ar-text"><h3>SMS All Members</h3><p>Bulk balance SMS to all members</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendLowStockAlert()"><div class="ar-icon" style="background:rgba(41,182,246,.18)">📬</div><div class="ar-text"><h3>Send Low Stock Alert</h3><p>Telegram + SMS to admins now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendFullStockReport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">📋</div><div class="ar-text"><h3>Send Full Stock Report</h3><p>Complete fridge inventory to admins</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Cloud</div>\n    <div class="action-row" onclick="fetchFromCloud()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">☁️</div><div class="ar-text"><h3>Merge Sync</h3><p>Pull cloud data and merge with local</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="syncNow(true)"><div class="ar-icon" style="background:rgba(0,212,255,.18)">⬆️</div><div class="ar-text"><h3>Save to Cloud</h3><p>Push all data to Google Sheets now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(243,156,18,.3)" onclick="forcePushToCloud()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">⚡</div><div class="ar-text"><h3 style="color:var(--orange)">Force Push (Overwrite Cloud)</h3><p>Replace cloud with this device</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="initFromCloud()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3>Initialize Device</h3><p>First-time setup — download all from cloud</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Reports &amp; Audit</div>\n    <div class="action-row" onclick="goTo(\'sReports\')"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📊</div><div class="ar-text"><h3>Reports &amp; Export</h3><p>Balance sheets · stock · Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>Audit Log</h3><p>Full record of who did what and when</p></div><div class="ar-chev">›</div></div>\n    '+(adminHtml));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2608,6 +2610,75 @@ async function sendLowStockAlert(){
     }
     setTimeout(nextAdminWA,3000);
     auditLog('Sent low stock alert: '+low.length+' items','admin',{});
+  });
+}
+
+async function sendFullStockReport(){
+  if(!S.drinks.length){toast('⚠️ No drinks in system');return;}
+  
+  const balDate=new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const categories=new Map();
+  S.drinks.forEach(d=>{
+    const cat=d.category||'Other';
+    if(!categories.has(cat)) categories.set(cat,[]);
+    categories.get(cat).push(d);
+  });
+  
+  let msg='📋 CCC Bar — Full Stock Report\n'+balDate+'\n\n';
+  let totalItems=0, totalValue=0, lowCount=0;
+  categories.forEach((drinks,cat)=>{
+    msg+='📦 '+cat+':\n';
+    drinks.forEach(d=>{
+      const isLow=d.stock<=d.threshold;
+      const icon=d.stock<=0?'🔴':isLow?'🟡':'🟢';
+      msg+='  '+icon+' '+d.name+': '+d.stock+(isLow?' ⚠️':'')+'\n';
+      totalItems+=d.stock;
+      totalValue+=d.stock*d.price;
+      if(isLow) lowCount++;
+    });
+    msg+='\n';
+  });
+  msg+='────────────────\n';
+  msg+='Total items in fridge: '+totalItems+'\n';
+  msg+='Estimated value: '+S.settings.currency+totalValue.toFixed(0)+'\n';
+  if(lowCount) msg+='⚠️ '+lowCount+' item(s) need restocking\n';
+  else msg+='✅ All stock levels OK\n';
+  msg+='\n🛶 CCC Bar — Centurion Canoe Club';
+  
+  showConf('📋 Send Full Stock Report','Send complete fridge inventory to:\n\n• Telegram CCC Bar group\n• WhatsApp → Elton, Johan, Alet\n• Email → Elton, Johan, Alet\n\n'+S.drinks.length+' drinks, '+totalItems+' total items.','g',async()=>{
+    toast('📤 Sending stock report…');
+    
+    // 1. Telegram
+    await sendTelegram(msg);
+    
+    // 2. Email
+    const adminEmails=(S.settings.adminEmails||'').split(',').filter(Boolean);
+    if(adminEmails.length && S.settings.sheetsUrl){
+      try{
+        const payload={action:'sendEmail',to:adminEmails[0],subject:'CCC Bar — Full Stock Report ('+balDate+')',body:msg,cc:adminEmails.slice(1).join(','),replyTo:'rietvleikanoeklub@gmail.com'};
+        await fetch(S.settings.sheetsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+      }catch(e){}
+    }
+    
+    // 3. WhatsApp to each admin
+    const adminPhones=[
+      {name:'Elton',phone:'27833979782'},
+      {name:'Johan',phone:'27834552776'},
+      {name:'Alet',phone:'27823378748'}
+    ];
+    window.open('https://wa.me/'+adminPhones[0].phone+'?text='+encodeURIComponent(msg),'_blank');
+    toast('💬 WhatsApp opened for '+adminPhones[0].name);
+    let waIdx=1;
+    function nextWA(){
+      if(waIdx>=adminPhones.length){toast('✅ All stock reports sent!');return;}
+      const a=adminPhones[waIdx]; waIdx++;
+      window.open('https://wa.me/'+a.phone+'?text='+encodeURIComponent(msg),'_blank');
+      toast('💬 WhatsApp opened for '+a.name);
+      setTimeout(nextWA,3000);
+    }
+    setTimeout(nextWA,3000);
+    
+    auditLog('Sent full stock report','admin',{totalItems,totalValue,lowCount});
   });
 }
 
