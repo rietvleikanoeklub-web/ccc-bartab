@@ -2,9 +2,11 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.26  (2026-03-26)                              ║
+  ║  Version: 4.27  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.27 2026-04-02  Settings save uses force push            ║
+  ║                    Fixes admin emails being overwritten     ║
   ║  v4.26 2026-03-26  Full stock report to admins             ║
   ║                    WhatsApp/Telegram/Email with totals     ║
   ║  v4.25 2026-03-26  WhatsApp stock alert to Elton/Johan/Alet║
@@ -56,7 +58,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.26">
+<meta name="app-version" content="4.27">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1031,7 +1033,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.26';
+const APP_VERSION = '4.27';
 const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
@@ -2200,7 +2202,7 @@ function saveAllSettings(){
   S.settings.adminEmails=document.getElementById('s-ae').value.trim();
   S.settings.callMeBotNumbers=document.getElementById('s-cmb').value.trim();
   auditLog('Settings updated', 'admin', {});
-  saveLocal(); syncNow(); toast('✅ Settings saved'); resetAutoLock();
+  saveLocal(); syncNow(false,true); toast('✅ Settings saved & pushed to cloud'); resetAutoLock();
 }
 
 function downloadAppsScript(){
