@@ -2,9 +2,11 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.29  (2026-03-26)                              ║
+  ║  Version: 4.30  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.30 2026-04-09  Drinks: cloud always wins in merge sync  ║
+  ║                    Stops stale devices reverting prices     ║
   ║  v4.29 2026-04-09  Drink edit saves category field          ║
   ║                    Price changes persist to cloud           ║
   ║  v4.28 2026-04-08  Member edit/delete uses force push       ║
@@ -63,7 +65,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.29">
+<meta name="app-version" content="4.30">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1038,7 +1040,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.29';
+const APP_VERSION = '4.30';
 const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
@@ -1228,23 +1230,9 @@ async function syncNow(manual=false,forcePush=false){
           S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
         }
         
-        // Drinks: merge — keep local stock/price if modified, add new cloud drinks
+        // Drinks: cloud always wins (all drink changes use force push)
         if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
-          const localDrinkMap=new Map();
-          S.drinks.forEach(d=>localDrinkMap.set(String(d.id),d));
-          S.drinks=cloud.drinks.map(cd=>{
-            const local=localDrinkMap.get(String(cd.id));
-            if(local){
-              // Preserve local stock if it differs (means user just changed it)
-              if(local.stock!==cd.stock) cd.stock=local.stock;
-              if(local.price!==cd.price) cd.price=local.price;
-              if(local.threshold!==cd.threshold) cd.threshold=local.threshold;
-            }
-            return cd;
-          });
-          // Add any new local drinks not in cloud
-          const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
-          S.drinks.forEach(d=>{if(!cloudDrinkIds.has(String(d.id))) S.drinks.push(d);});
+          S.drinks=cloud.drinks;
         }
         // Stock purchases: cloud + new local
         if(Array.isArray(cloud.stock_purchases)){
