@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.27  (2026-03-26)                              ║
+  ║  Version: 4.28  (2026-03-26)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.28 2026-04-08  Member edit/delete uses force push       ║
+  ║                    Balance clear uses force push            ║
+  ║                    All data changes now persist to cloud    ║
   ║  v4.27 2026-04-02  Settings save uses force push            ║
   ║                    Fixes admin emails being overwritten     ║
   ║  v4.26 2026-03-26  Full stock report to admins             ║
@@ -58,7 +61,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.27">
+<meta name="app-version" content="4.28">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1033,7 +1036,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.27';
+const APP_VERSION = '4.28';
 const APP_BUILD = '2026-03-26';
 
 // ═══════════════════════════════════════════════════════════
@@ -1702,7 +1705,7 @@ function payFull(){
     const txId=uid();
     S.transactions.push({id:txId,memberId:curMid,amount:Math.abs(b),desc:'💵 Full Balance Payment',date:new Date().toISOString(),type:'topup',enteredBy:currentUser.id,enteredByName:currentUser.name,device:sessionDevice});
     auditLog(('Full balance payment '+(fmt(Math.abs(b)))+' for '+(m.name)), 'topup', {memberId:curMid,memberName:m.name,amount:Math.abs(b),txId});
-    saveLocal(); syncNow(); renderDetHero(); renderHistory(); toast('✅ Balance cleared');
+    saveLocal(); syncNow(false,true); renderDetHero(); renderHistory(); toast('✅ Balance cleared');
   });
 }
 
@@ -1740,7 +1743,7 @@ function saveEditMember(){
     if(curMid===editingMid){document.getElementById('detName').textContent=name;renderDetHero();}
     toast(('✅ '+(name)+' updated'));
   }
-  closeEditMember(); saveLocal(); syncNow(); if(editMemberCb) editMemberCb(); else renderMList();
+  closeEditMember(); saveLocal(); syncNow(false,true); if(editMemberCb) editMemberCb(); else renderMList();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1910,7 +1913,7 @@ function delMember(id){
   const m=S.members.find(x=>String(x.id)===String(id));
   const balMsg=Math.abs(bal(id))>0?'\n⚠️ Outstanding balance: '+fmt(bal(id)):''; showConf('Remove Member','Remove '+m.name+'?'+balMsg,'',(()=>{
     auditLog(('Deleted member: '+(m.name)), 'admin', {memberName:m.name});
-    S.members=S.members.filter(String(x.id)!==String(id)); saveLocal(); syncNow(); renderMemMan(); toast(('🗑 '+(m.name)+' removed'));
+    S.members=S.members.filter(String(x.id)!==String(id)); saveLocal(); syncNow(false,true); renderMemMan(); toast(('🗑 '+(m.name)+' removed'));
   }));
 }
 
