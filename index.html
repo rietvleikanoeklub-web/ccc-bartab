@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.31  (2026-05-08)                              ║
+  ║  Version: 4.32  (2026-05-08)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.32 2026-05-08  Bank details in payment requests        ║
+  ║                    Email / WhatsApp / Telegram show EFT    ║
+  ║                    Bank fields editable in Settings        ║
   ║  v4.31 2026-05-08  Login refreshes users from cloud first  ║
   ║                    Force-push pulls cloud users first too  ║
   ║                    (unless the push IS a user/PIN change)  ║
@@ -1044,7 +1047,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.31';
+const APP_VERSION = '4.32';
 const APP_BUILD = '2026-05-08';
 
 // ═══════════════════════════════════════════════════════════
@@ -1067,7 +1070,13 @@ let S = {
     lowStockDefault:5, alertDay:4, alertHour:10,
     autoLockMinutes:30,
     adminEmails:'elton@edp.co.za,johanstrydom13@gmail.com,aletbosman@gmail.com',
-    callMeBotNumbers:''
+    callMeBotNumbers:'',
+    // Banking details — included in payment-request emails / WhatsApp / Telegram (v4.32)
+    bankAccountName:'CCC Bar',
+    bankAccountNumber:'2400645724',
+    bankName:'Capitec',
+    bankAccountType:'Savings',
+    bankBranchCode:'470010'
   }
 };
 
@@ -2221,7 +2230,7 @@ function exportSessionReport(dateStr){
 // SETTINGS
 // ═══════════════════════════════════════════════════════════
 function renderSettings(){
-  document.getElementById('settingsBody').innerHTML=('\n    <div class="info-box">⚙️ Changes save when you tap "Save Settings".</div>\n    <div class="sec-hdr">☁️ Google Sheets Cloud</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Apps Script URL</div><div class="sdesc">Paste deployed Google Apps Script URL</div></div></div>\n      <div style="padding:8px 0;"><input class="s-in" id="s-sheets" value="'+(esc(S.settings.sheetsUrl))+'" placeholder="https://script.google.com/macros/s/..." style="width:100%;text-align:left;font-size:.72rem;"></div>\n    </div>\n    <div class="warn-box">📋 <b>Setup:</b> Google Sheets → Extensions → Apps Script → Paste code → Deploy as Web App → Copy URL above</div>\n    <button onclick="downloadAppsScript()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius-sm);cursor:pointer;font-size:.83rem;width:100%;margin-bottom:13px;">📥 Download Apps Script Code</button>\n    <div class="sec-hdr">📱 SMS (SMSPortal)</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Username</div></div><input class="s-in" id="s-su" value="'+(esc(S.settings.smsUser))+'"></div>\n      <div class="s-row"><div><div class="slabel">Password</div></div><input class="s-in" id="s-sp" type="password" value="'+(esc(S.settings.smsPass))+'"></div>\n      <div class="s-row"><div><div class="slabel">Sender Name</div><div class="sdesc">Max 11 chars</div></div><input class="s-in" id="s-ss" value="'+(esc(S.settings.smsSender))+'" maxlength="11"></div>\n    </div>\n    <div class="sec-hdr">📬 Telegram Alerts</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bot Token</div></div><input class="s-in" id="s-tt" type="password" value="'+(esc(S.settings.telegramToken))+'"></div>\n      <div class="s-row"><div><div class="slabel">Chat/Group ID</div></div><input class="s-in" id="s-tc" value="'+(esc(S.settings.telegramChatId))+'"></div>\n    </div>\n    <div class="sec-hdr">💬 WhatsApp Alerts (CallMeBot)</div>\n    <div class=\"settings-card\">\n      <div class=\"s-row\"><div><div class=\"slabel\">Admin Numbers</div><div class=\"sdesc\">phone,apikey per admin (semicolon separated)</div></div></div>\n      <div style=\"padding:0 0 8px;\"><input class=\"s-in\" id=\"s-cmb\" value=\"'+(esc(S.settings.callMeBotNumbers||''))+'\" placeholder=\"27831234567,123456;27829876543,654321\" style=\"width:100%;text-align:left;font-size:.72rem;\"></div>\n    </div>\n    <div class=\"warn-box\">💬 <b>Setup:</b> Save +34 644 71 99 30 → WhatsApp them: I allow callmebot to send me messages → Get API key → Enter phone,apikey</div>\n    <div class=\"sec-hdr">🔔 General</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bar Name</div></div><input class="s-in" id="s-name" value="'+(esc(S.settings.barName))+'"></div>\n      <div class="s-row"><div><div class="slabel">Device Name</div><div class="sdesc">Shows in audit log</div></div><input class="s-in" id="s-dev" value="'+(esc(S.settings.deviceName||'Galaxy Tab'))+'"></div>\n      <div class="s-row"><div><div class="slabel">Currency Symbol</div></div><input class="s-in" id="s-cur" value="'+(esc(S.settings.currency))+'" style="width:70px;"></div>\n      <div class="s-row"><div><div class="slabel">Auto-lock (minutes)</div><div class="sdesc">Lock screen after inactivity</div></div><input class="s-in" id="s-lock" type="number" value="'+(S.settings.autoLockMinutes||30)+'" min="5" style="width:80px;"></div>\n      <div class="s-row"><div><div class="slabel">Admin Names</div><div class="sdesc">For stock alerts (comma-separated)</div></div><input class="s-in" id="s-an" value="'+(esc(S.settings.adminNames))+'"></div>\n      <div class="s-row"><div><div class="slabel">Admin Emails (CC)</div><div class="sdesc">CC on statements/receipts</div></div></div>\n      <div style="padding:0 0 8px;"><input class="s-in" id="s-ae" value="'+(esc(S.settings.adminEmails||''))+'" placeholder="elton@edp.co.za,johanstrydom13@gmail.com" style="width:100%;text-align:left;font-size:.75rem;"></div>\n    </div>\n    <button class="save-btn" onclick="saveAllSettings()">💾 Save All Settings</button>\n    <button class="danger-btn" onclick="clearAllTx()">🗑 Clear All Transactions</button>\n    <div style=\"text-align:center;padding:16px 0 8px;font-size:.68rem;color:var(--muted);opacity:.5;\">CCC Bar Tab v'+APP_VERSION+' ('+APP_BUILD+')</div>');
+  document.getElementById('settingsBody').innerHTML=('\n    <div class="info-box">⚙️ Changes save when you tap "Save Settings".</div>\n    <div class="sec-hdr">☁️ Google Sheets Cloud</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Apps Script URL</div><div class="sdesc">Paste deployed Google Apps Script URL</div></div></div>\n      <div style="padding:8px 0;"><input class="s-in" id="s-sheets" value="'+(esc(S.settings.sheetsUrl))+'" placeholder="https://script.google.com/macros/s/..." style="width:100%;text-align:left;font-size:.72rem;"></div>\n    </div>\n    <div class="warn-box">📋 <b>Setup:</b> Google Sheets → Extensions → Apps Script → Paste code → Deploy as Web App → Copy URL above</div>\n    <button onclick="downloadAppsScript()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius-sm);cursor:pointer;font-size:.83rem;width:100%;margin-bottom:13px;">📥 Download Apps Script Code</button>\n    <div class="sec-hdr">📱 SMS (SMSPortal)</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Username</div></div><input class="s-in" id="s-su" value="'+(esc(S.settings.smsUser))+'"></div>\n      <div class="s-row"><div><div class="slabel">Password</div></div><input class="s-in" id="s-sp" type="password" value="'+(esc(S.settings.smsPass))+'"></div>\n      <div class="s-row"><div><div class="slabel">Sender Name</div><div class="sdesc">Max 11 chars</div></div><input class="s-in" id="s-ss" value="'+(esc(S.settings.smsSender))+'" maxlength="11"></div>\n    </div>\n    <div class="sec-hdr">📬 Telegram Alerts</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bot Token</div></div><input class="s-in" id="s-tt" type="password" value="'+(esc(S.settings.telegramToken))+'"></div>\n      <div class="s-row"><div><div class="slabel">Chat/Group ID</div></div><input class="s-in" id="s-tc" value="'+(esc(S.settings.telegramChatId))+'"></div>\n    </div>\n    <div class="sec-hdr">💬 WhatsApp Alerts (CallMeBot)</div>\n    <div class=\"settings-card\">\n      <div class=\"s-row\"><div><div class=\"slabel\">Admin Numbers</div><div class=\"sdesc\">phone,apikey per admin (semicolon separated)</div></div></div>\n      <div style=\"padding:0 0 8px;\"><input class=\"s-in\" id=\"s-cmb\" value=\"'+(esc(S.settings.callMeBotNumbers||''))+'\" placeholder=\"27831234567,123456;27829876543,654321\" style=\"width:100%;text-align:left;font-size:.72rem;\"></div>\n    </div>\n    <div class=\"warn-box\">💬 <b>Setup:</b> Save +34 644 71 99 30 → WhatsApp them: I allow callmebot to send me messages → Get API key → Enter phone,apikey</div>\n    <div class=\"sec-hdr">🔔 General</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Bar Name</div></div><input class="s-in" id="s-name" value="'+(esc(S.settings.barName))+'"></div>\n      <div class="s-row"><div><div class="slabel">Device Name</div><div class="sdesc">Shows in audit log</div></div><input class="s-in" id="s-dev" value="'+(esc(S.settings.deviceName||'Galaxy Tab'))+'"></div>\n      <div class="s-row"><div><div class="slabel">Currency Symbol</div></div><input class="s-in" id="s-cur" value="'+(esc(S.settings.currency))+'" style="width:70px;"></div>\n      <div class="s-row"><div><div class="slabel">Auto-lock (minutes)</div><div class="sdesc">Lock screen after inactivity</div></div><input class="s-in" id="s-lock" type="number" value="'+(S.settings.autoLockMinutes||30)+'" min="5" style="width:80px;"></div>\n      <div class="s-row"><div><div class="slabel">Admin Names</div><div class="sdesc">For stock alerts (comma-separated)</div></div><input class="s-in" id="s-an" value="'+(esc(S.settings.adminNames))+'"></div>\n      <div class="s-row"><div><div class="slabel">Admin Emails (CC)</div><div class="sdesc">CC on statements/receipts</div></div></div>\n      <div style="padding:0 0 8px;"><input class="s-in" id="s-ae" value="'+(esc(S.settings.adminEmails||''))+'" placeholder="elton@edp.co.za,johanstrydom13@gmail.com" style="width:100%;text-align:left;font-size:.75rem;"></div>\n    </div>\n    <div class="sec-hdr">💳 Banking Details (for payment requests)</div>\n    <div class="settings-card">\n      <div class="s-row"><div><div class="slabel">Account Name</div></div><input class="s-in" id="s-bn" value="'+(esc(S.settings.bankAccountName||''))+'"></div>\n      <div class="s-row"><div><div class="slabel">Account Number</div></div><input class="s-in" id="s-bnum" value="'+(esc(S.settings.bankAccountNumber||''))+'"></div>\n      <div class="s-row"><div><div class="slabel">Bank</div></div><input class="s-in" id="s-bbank" value="'+(esc(S.settings.bankName||''))+'"></div>\n      <div class="s-row"><div><div class="slabel">Account Type</div></div><input class="s-in" id="s-btype" value="'+(esc(S.settings.bankAccountType||''))+'"></div>\n      <div class="s-row"><div><div class="slabel">Branch Code</div></div><input class="s-in" id="s-bbranch" value="'+(esc(S.settings.bankBranchCode||''))+'"></div>\n    </div>\n    <button class="save-btn" onclick="saveAllSettings()">💾 Save All Settings</button>\n    <button class="danger-btn" onclick="clearAllTx()">🗑 Clear All Transactions</button>\n    <div style=\"text-align:center;padding:16px 0 8px;font-size:.68rem;color:var(--muted);opacity:.5;\">CCC Bar Tab v'+APP_VERSION+' ('+APP_BUILD+')</div>');
 }
 
 function saveAllSettings(){
@@ -2238,6 +2247,12 @@ function saveAllSettings(){
   S.settings.adminNames=document.getElementById('s-an').value.trim();
   S.settings.adminEmails=document.getElementById('s-ae').value.trim();
   S.settings.callMeBotNumbers=document.getElementById('s-cmb').value.trim();
+  // v4.32: Banking details
+  S.settings.bankAccountName=document.getElementById('s-bn').value.trim()||'CCC Bar';
+  S.settings.bankAccountNumber=document.getElementById('s-bnum').value.trim();
+  S.settings.bankName=document.getElementById('s-bbank').value.trim();
+  S.settings.bankAccountType=document.getElementById('s-btype').value.trim();
+  S.settings.bankBranchCode=document.getElementById('s-bbranch').value.trim();
   auditLog('Settings updated', 'admin', {});
   saveLocal(); syncNow(false,true); toast('✅ Settings saved & pushed to cloud'); resetAutoLock();
 }
@@ -2274,6 +2289,18 @@ async function doSendSMS(){
 }
 
 let _emailTo='',_emailSubject='',_emailBody='';
+
+// v4.32: Reusable bank details block for payment-request messages
+function getBankDetailsBlock(memberName){
+  const ref=(memberName||'').split(' ').slice(0,2).join(' ').trim()||'Your Name';
+  return '\n💳 Banking Details (EFT):\n'
+    +'Account Name: '+(S.settings.bankAccountName||'CCC Bar')+'\n'
+    +'Bank: '+(S.settings.bankName||'Capitec')+' ('+(S.settings.bankAccountType||'Savings')+')\n'
+    +'Account Number: '+(S.settings.bankAccountNumber||'2400645724')+'\n'
+    +'Branch Code: '+(S.settings.bankBranchCode||'470010')+'\n'
+    +'Reference: '+ref+'\n';
+}
+
 function prepareEmail(id,type='statement',amt=0,methodLabel=''){
   const m=S.members.find(x=>String(x.id)===String(id)); const b=bal(m.id);
   const balDate=new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'});
@@ -2281,7 +2308,7 @@ function prepareEmail(id,type='statement',amt=0,methodLabel=''){
   const lines=txs.map(t=>((fmtDate(t.date).padEnd(22))+' '+(t.amount<0?'- ':'+ ')+(S.settings.currency)+(Math.abs(t.amount).toFixed(2).padStart(8))+'  '+cleanDesc(t.desc||''))).join('\n');
   let subject='',body='';
   if(type==='receipt'){ subject=('CCC Bar Payment — '+(S.settings.currency)+(amt.toFixed(2))); body=('Hi '+(m.name.split(' ')[0])+',\n\nThank you for your CCC Bar payment!\n\nAmount: '+(S.settings.currency)+(amt.toFixed(2))+' ('+(methodLabel)+')\nDate: '+balDate+'\nNew Balance: '+(b>=0?'+':'')+(S.settings.currency)+(b.toFixed(2))+'\n\nSee you on the water! 🛶\n'+(S.settings.barName)+' — CCC'); }
-  else { subject=('CCC Bar Tab Statement — '+balDate); body=('Hi '+(m.name.split(' ')[0])+',\n\nYour CCC Bar Tab Statement:\n\nMember: '+(m.name)+'\nBalance: '+(b>=0?'+':'-')+(S.settings.currency)+(Math.abs(b).toFixed(2))+' ('+balDate+')\n\nRecent Transactions:\n'+('-'.repeat(50))+'\n'+(lines||'(no transactions)')+'\n'+('-'.repeat(50))+'\n\n'+(b<0?('Please top up '+S.settings.currency+Math.abs(b).toFixed(2)+' at Thursday time trial.'):b<100?'Balance getting low - please top up soon.':'Account in good standing 🛶')+'\n\n'+(S.settings.barName)+' — Centurion Canoe Club'); }
+  else { subject=('CCC Bar Tab Statement — '+balDate); body=('Hi '+(m.name.split(' ')[0])+',\n\nYour CCC Bar Tab Statement:\n\nMember: '+(m.name)+'\nBalance: '+(b>=0?'+':'-')+(S.settings.currency)+(Math.abs(b).toFixed(2))+' ('+balDate+')\n\nRecent Transactions:\n'+('-'.repeat(50))+'\n'+(lines||'(no transactions)')+'\n'+('-'.repeat(50))+'\n\n'+(b<0?('Please top up '+S.settings.currency+Math.abs(b).toFixed(2)+' at Thursday time trial or via EFT.\n'+getBankDetailsBlock(m.name)):b<100?'Balance getting low - please top up soon.':'Account in good standing 🛶')+'\n\n'+(S.settings.barName)+' — Centurion Canoe Club'); }
   _emailTo=m.email; _emailSubject=subject; _emailBody=body;
   document.getElementById('emailTitle').textContent=type==='receipt'?'✉️ Payment Receipt':'✉️ Tab Statement';
   document.getElementById('emailRecip').textContent=('To: '+(m.name)+' · '+(m.email));
@@ -2372,6 +2399,7 @@ async function sendMemberTelegram(id){
     +(m.email?'✉️ '+m.email+'\n':'')
     +'\n📋 <b>Recent (last 5):</b>\n'
     +(lines||'(no transactions)')
+    +(b<0?'\n\n'+getBankDetailsBlock(m.name):'')
     +'\n\n🛶 CCC Bar — '+new Date().toLocaleDateString('en-ZA');
   toast('📬 Sending to Telegram…');
   const ok=await sendTelegram(msg);
@@ -2400,7 +2428,7 @@ function sendMemberWhatsApp(id){
     return dt+'  '+(t.amount<0?'- ':'+ ')+S.settings.currency+Math.abs(t.amount).toFixed(2)+'  '+icon+' '+desc;
   }).join('\n');
   const balDate=new Date().toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'});
-  const status=b<0?'Please top up at Thursday time trial.':b<100?'Balance getting low — please top up soon.':'Account in good standing 🛶';
+  const status=b<0?'Please top up at Thursday time trial or via EFT.':b<100?'Balance getting low — please top up soon.':'Account in good standing 🛶';
   const msg='Hi '+m.name.split(' ')[0]+',\n\n'
     +'Your CCC Bar Tab Statement:\n'
     +'💰 Balance: '+(b>=0?'+':'')+S.settings.currency+b.toFixed(2)+' ('+balDate+')\n\n'
@@ -2408,7 +2436,8 @@ function sendMemberWhatsApp(id){
     +'────────────────\n'
     +(lines||'(no transactions)')+'\n'
     +'────────────────\n\n'
-    +status+'\n\n'
+    +status+'\n'
+    +(b<0?getBankDetailsBlock(m.name)+'\n':'\n')
     +'🛶 CCC Bar — Centurion Canoe Club';
   const intl=formatCellIntl(m.cell);
   window.open('https://wa.me/'+intl+'?text='+encodeURIComponent(msg),'_blank');
@@ -2516,7 +2545,8 @@ async function bulkEmailOwed(){
         +'Your CCC Bar Tab balance is: '+(b>=0?'+':'')+S.settings.currency+b.toFixed(2)+' ('+balDate+')\n\n'
         +'You currently owe the bar '+S.settings.currency+Math.abs(b).toFixed(2)+'.\n\n'
         +'Recent Transactions:\n'+('-'.repeat(50))+'\n'+(lines||'(no transactions)')+'\n'+('-'.repeat(50))+'\n\n'
-        +'Please top up at Thursday time trial.\n\n'
+        +'Please top up at Thursday time trial or via EFT.\n'
+        +getBankDetailsBlock(m.name)+'\n'
         +S.settings.barName+' — Centurion Canoe Club';
       if(url){
         try{
@@ -2561,7 +2591,9 @@ function bulkWhatsAppOwed(){
       +'Your CCC Bar Tab balance: '+(b>=0?'+':'')+S.settings.currency+b.toFixed(2)+' ('+balDate+')\n\n'
       +'You currently owe the bar '+S.settings.currency+Math.abs(b).toFixed(2)+'.\n\n'
       +'📋 Last 5 Transactions:\n────────────────\n'+(lines||'(no transactions)')+'\n────────────────\n\n'
-      +'Please top up at Thursday time trial.\n\n🛶 CCC Bar — Centurion Canoe Club';
+      +'Please top up at Thursday time trial or via EFT.\n'
+      +getBankDetailsBlock(m.name)+'\n'
+      +'🛶 CCC Bar — Centurion Canoe Club';
     const intl=formatCellIntl(m.cell);
     window.open('https://wa.me/'+intl+'?text='+encodeURIComponent(msg),'_blank');
     toast('💬 '+(idx)+'/'+targets.length+': '+m.name.split(' ')[0]+' — tap Send in WhatsApp, then come back');
