@@ -2,9 +2,13 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.30  (2026-03-26)                              ║
+  ║  Version: 4.31  (2026-05-08)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.31 2026-05-08  Login refreshes users from cloud first  ║
+  ║                    Force-push pulls cloud users first too  ║
+  ║                    (unless the push IS a user/PIN change)  ║
+  ║                    Fixes PIN reverting between devices     ║
   ║  v4.30 2026-04-09  Drinks: cloud always wins in merge sync  ║
   ║                    Stops stale devices reverting prices     ║
   ║  v4.29 2026-04-09  Drink edit saves category field          ║
@@ -1040,8 +1044,8 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.30';
-const APP_BUILD = '2026-03-26';
+const APP_VERSION = '4.31';
+const APP_BUILD = '2026-05-08';
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL
@@ -1183,12 +1187,27 @@ function setSyncStatus(st,lbl){
   const sl=document.getElementById('syncLabel');if(sl)sl.textContent=lbl||st;
 }
 
-async function syncNow(manual=false,forcePush=false){
+async function syncNow(manual=false,forcePush=false,isUserEdit=false){
   const url=S.settings.sheetsUrl; if(!url){setSyncStatus('offline','No cloud URL');return;}
   setSyncStatus('syncing',forcePush?'Force pushing…':'Syncing…');
   try{
     if(forcePush){
       // FORCE PUSH: overwrite cloud, no merge
+      // v4.31: Before pushing, refresh users from cloud UNLESS this push IS a user/PIN edit.
+      // Prevents stale local users from clobbering PIN/user changes made on another device.
+      if(!isUserEdit){
+        try{
+          const check=await fetch(url);
+          if(check.ok){
+            const cj=await check.json();
+            if(cj.ok && cj.data && Array.isArray(cj.data.users) && cj.data.users.length>0){
+              S.users=cj.data.users;
+              S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
+              console.log('[FORCE-PUSH] Refreshed '+S.users.length+' users from cloud before push');
+            }
+          }
+        }catch(e){/* offline — push current users as-is */}
+      }
       const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})});
       if(!r.ok) throw new Error('HTTP '+r.status);
     } else {
@@ -1352,9 +1371,33 @@ document.addEventListener('click', resetAutoLock);
 // ═══════════════════════════════════════════════════════════
 let loginTarget = null, loginBuf = '';
 
-function renderLogin(){
+async function renderLogin(){
   const vEl=document.getElementById('loginVer');
   if(vEl) vEl.textContent='v'+APP_VERSION+' ('+APP_BUILD+')';
+  // v4.31: Refresh users from cloud BEFORE rendering login, so PIN validates against latest data.
+  // Timeout 3s — if offline/slow, fall back to local users.
+  const sel=document.getElementById('loginUserSelect');
+  if(S.settings.sheetsUrl && sel){
+    sel.style.display='flex';
+    sel.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.85rem;">☁️ Refreshing user list…</div>';
+    try{
+      const ctl=new AbortController();
+      const tid=setTimeout(()=>ctl.abort(),3000);
+      const r=await fetch(S.settings.sheetsUrl,{signal:ctl.signal});
+      clearTimeout(tid);
+      if(r.ok){
+        const j=await r.json();
+        if(j.ok && j.data && Array.isArray(j.data.users) && j.data.users.length>0){
+          S.users=j.data.users;
+          S.users.forEach(u=>{ u.pin=String(u.pin||'0000').padStart(4,'0'); if(u.pin==='****') u.pin='0000'; });
+          saveLocal();
+          console.log('[LOGIN] Refreshed '+S.users.length+' users from cloud');
+        }
+      }
+    }catch(e){
+      console.log('[LOGIN] Cloud refresh skipped — using local users:', e.message||e.name);
+    }
+  }
   showUserSelect();
 }
 
@@ -1980,7 +2023,7 @@ function renderUsers(){
 function changeUserPin(uid,pin){
   if(!/^\d{4}$/.test(pin)){toast('⚠️ PIN must be exactly 4 digits');return;}
   const u=S.users.find(x=>String(x.id)===String(uid)); if(!u) return;
-  u.pin=pin; saveLocal(); syncNow(false,true);
+  u.pin=pin; saveLocal(); syncNow(false,true,true); // v4.31: isUserEdit=true so push isn't reverted
   auditLog(('Changed PIN for user: '+(u.name)), 'admin', {targetUser:u.name});
   toast(('✅ PIN updated for '+(u.name)));
 }
@@ -1989,7 +2032,7 @@ function updateUser(uid,field,value){
   const u=S.users.find(x=>String(x.id)===String(uid)); if(!u) return;
   u[field]=value;
   if(field==='name') u.initials=initials(value);
-  saveLocal(); syncNow(false,true); // Force push — prevents cloud overwriting the change
+  saveLocal(); syncNow(false,true,true); // v4.31: isUserEdit=true — push our edit, don't refresh users from cloud first
   auditLog('Updated user '+u.name+' ('+field+')','admin',{});
   toast('✅ '+u.name+' updated');
   renderUsers();
@@ -2000,7 +2043,7 @@ function addNewUser(){
   const color=COLORS[S.users.length % COLORS.length];
   const id='u'+uid();
   S.users.push({id,name:'New User',role:'operator',color,pin:'0000',initials:'NU'});
-  saveLocal(); syncNow(false,true);
+  saveLocal(); syncNow(false,true,true); // v4.31: isUserEdit=true
   auditLog('Added new user','admin',{});
   toast('✅ New user added — set name, PIN and role');
   renderUsers();
@@ -2015,7 +2058,7 @@ function removeUser(uid){
   showConf('Remove User','Remove '+u.name+'?\n\nThey will no longer be able to log in.','',()=>{
     S.users=S.users.filter(x=>String(x.id)!==String(uid));
     auditLog('Removed user: '+u.name,'admin',{});
-    saveLocal(); syncNow(false,true);
+    saveLocal(); syncNow(false,true,true); // v4.31: isUserEdit=true
     toast('🗑 '+u.name+' removed');
     renderUsers();
   });
