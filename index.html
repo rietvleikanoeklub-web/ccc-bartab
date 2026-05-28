@@ -2,9 +2,10 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.32  (2026-05-08)                              ║
+  ║  Version: 4.33  (2026-05-28)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.33 2026-05-28  Fix literal \n\n in Add to Tab confirm  ║
   ║  v4.32 2026-05-08  Bank details in payment requests        ║
   ║                    Email / WhatsApp / Telegram show EFT    ║
   ║                    Bank fields editable in Settings        ║
@@ -72,7 +73,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.30">
+<meta name="app-version" content="4.33">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1047,8 +1048,8 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.32';
-const APP_BUILD = '2026-05-08';
+const APP_VERSION = '4.33';
+const APP_BUILD = '2026-05-28';
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL
