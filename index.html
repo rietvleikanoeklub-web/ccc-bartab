@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.33  (2026-05-28)                              ║
+  ║  Version: 4.34  (2026-05-28)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.34 2026-05-28  Fix new drinks lost on sync race        ║
+  ║                    Pause sync while drink edit modal open  ║
+  ║                    Add search bar to Drinks & Stock        ║
   ║  v4.33 2026-05-28  Fix literal \n\n in Add to Tab confirm  ║
   ║  v4.32 2026-05-08  Bank details in payment requests        ║
   ║                    Email / WhatsApp / Telegram show EFT    ║
@@ -73,7 +76,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.33">
+<meta name="app-version" content="4.34">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -969,6 +972,7 @@ select.fin{cursor:pointer;}
       <button class="fchip" id="dstab-manage" onclick="dsTab('manage')">⚙️ Manage</button>
       <button class="fchip" id="dstab-history" onclick="dsTab('history')">📋 Purchases</button>
     </div>
+    <div class="search-bar" id="drinkSearchWrap" style="margin-top:8px;"><input class="srch" id="drinkSrch" type="search" placeholder="🔍 Search drinks…" oninput="renderStock()"></div>
   </div>
   <div class="body" id="stockBody"></div>
 </div>
@@ -1048,7 +1052,7 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.33';
+const APP_VERSION = '4.34';
 const APP_BUILD = '2026-05-28';
 
 // ═══════════════════════════════════════════════════════════
@@ -1259,9 +1263,12 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
           S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
         }
         
-        // Drinks: cloud always wins (all drink changes use force push)
+        // Drinks: cloud wins on conflict, but preserve any new local drinks
+        // (e.g. just-added drinks whose force-push hasn't completed yet)
         if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
-          S.drinks=cloud.drinks;
+          const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
+          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id)));
+          S.drinks=cloud.drinks.concat(newLocalDrinks);
         }
         // Stock purchases: cloud + new local
         if(Array.isArray(cloud.stock_purchases)){
@@ -1795,6 +1802,7 @@ function saveEditMember(){
 let editingDrinkId=null, editDrinkImgType='emoji', editDrinkEmoji='🍺', editDrinkPhoto=null, editDrinkLogoUrl='';
 
 function openEditDrink(id){
+  _syncPaused=true; // pause sync so a background pull can't wipe the drink mid-edit
   editingDrinkId=id; editDrinkImgType='emoji'; editDrinkEmoji='🍺'; editDrinkPhoto=null; editDrinkLogoUrl='';
   document.getElementById('editDrinkTitle').textContent=!id?'➕ New Drink':'✏️ Edit Drink';
   if(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); document.getElementById('ed-name').value=dk.name||''; document.getElementById('ed-price').value=dk.price||''; document.getElementById('ed-stock').value=dk.stock||0; document.getElementById('ed-threshold').value=dk.threshold||5; document.getElementById('ed-category').value=dk.category||''; editDrinkImgType=dk.imgType||'emoji'; if(dk.imgType==='emoji')editDrinkEmoji=dk.img; else if(dk.imgType==='logo'){editDrinkLogoUrl=dk.img;document.getElementById('ed-logourl').value=dk.img;} else if(dk.imgType==='photo')editDrinkPhoto=dk.img; }
@@ -1807,7 +1815,7 @@ function switchImgType(t){ editDrinkImgType=t; ['emoji','photo','logo'].forEach(
 function triggerDrinkPhoto(){ document.getElementById('drinkPhotoInput').click(); }
 function handleDrinkPhoto(input){ const f=input.files[0];if(!f)return; const r=new FileReader(); r.onload=e=>{editDrinkPhoto=e.target.result;document.getElementById('drinkPhotoPrev').innerHTML=('<img src="'+(editDrinkPhoto)+'" style="width:72px;height:72px;object-fit:contain;">');}; r.readAsDataURL(f); }
 function previewLogo(){ const u=document.getElementById('ed-logourl').value.trim(); if(!u){toast('⚠️ Enter a URL');return;} editDrinkLogoUrl=u; document.getElementById('logoPrev').innerHTML=('<img src="'+(u)+'" style="width:72px;height:72px;object-fit:contain;" onerror="this.parentElement.innerHTML=\'❌\'">');  }
-function closeEditDrink(){ document.getElementById('editDrinkMov').classList.remove('on'); }
+function closeEditDrink(){ _syncPaused=false; document.getElementById('editDrinkMov').classList.remove('on'); }
 function saveEditDrink(){
   const name=document.getElementById('ed-name').value.trim(); const price=parseFloat(document.getElementById('ed-price').value);
   if(!name||!price||price<=0){toast('⚠️ Name and price required');return;}
@@ -1835,14 +1843,19 @@ function dsTab(mode){
 }
 
 function renderStock(){
+  // Show search on stock/manage tabs, hide on history
+  const searchWrap=document.getElementById('drinkSearchWrap');
+  if(searchWrap) searchWrap.style.display=(dsTabMode==='history')?'none':'block';
   if(dsTabMode==='manage') return renderDrinkManage();
   if(dsTabMode==='history') return renderStockHistory();
   // STOCK COUNT TAB
+  const qEl=document.getElementById('drinkSrch'); const q=(qEl&&qEl.value||'').toLowerCase().trim();
+  const filtered=q?S.drinks.filter(d=>(d.name||'').toLowerCase().includes(q)||(d.category||'').toLowerCase().includes(q)):S.drinks;
   const low=S.drinks.filter(d=>d.stock<=d.threshold);
   let html=low.length?('<div class="warn-box">⚠️ '+(low.length)+' item(s) low: '+(low.map(d=>d.name).join(', '))+'</div>'):'';
   // Group by category
   const categories=new Map();
-  S.drinks.forEach(dk=>{
+  filtered.forEach(dk=>{
     const cat=dk.category||'Other';
     if(!categories.has(cat)) categories.set(cat,[]);
     categories.get(cat).push(dk);
@@ -1855,13 +1868,16 @@ function renderStock(){
     }).join('');
   });
   if(!S.drinks.length) html='<div class="empty"><div class="ei">🍺</div><p>No drinks yet — tap Import or + Purchase</p></div>';
+  else if(!filtered.length) html+='<div class="empty"><div class="ei">🔍</div><p>No drinks match "'+esc(q)+'"</p></div>';
   document.getElementById('stockBody').innerHTML=html;
 }
 
 function renderDrinkManage(){
+  const qEl=document.getElementById('drinkSrch'); const q=(qEl&&qEl.value||'').toLowerCase().trim();
+  const filtered=q?S.drinks.filter(d=>(d.name||'').toLowerCase().includes(q)||(d.category||'').toLowerCase().includes(q)):S.drinks;
   let html='<button onclick="openAddDrink()" style="width:100%;padding:12px;background:var(--accent);border:none;border-radius:var(--radius-sm);color:var(--bg);font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:.95rem;cursor:pointer;margin-bottom:10px;">➕ Add New Drink</button>';
   const categories=new Map();
-  S.drinks.forEach(dk=>{
+  filtered.forEach(dk=>{
     const cat=dk.category||'Other';
     if(!categories.has(cat)) categories.set(cat,[]);
     categories.get(cat).push(dk);
@@ -1883,6 +1899,7 @@ function renderDrinkManage(){
     }).join('');
   });
   if(!S.drinks.length) html+='<div class="empty"><div class="ei">🍺</div><p>No drinks — tap Import or Add</p></div>';
+  else if(!filtered.length) html+='<div class="empty"><div class="ei">🔍</div><p>No drinks match "'+esc(q)+'"</p></div>';
   document.getElementById('stockBody').innerHTML=html;
 }
 
