@@ -1682,7 +1682,7 @@ function doPurchase(){
   if(!total) return;
   const items=Object.entries(cart).filter(([,q])=>q>0).map(([id,q])=>{const dk=S.drinks.find(x=>String(x.id)===String(id));return ((dk.imgType==='emoji'?dk.img:'')+' '+(dk.name)+' ×'+(q));}).join(', ');
   const m=S.members.find(x=>String(x.id)===String(curMid));
-  showConf('Add to Tab',('Add '+(fmt(total))+' to '+(m.name)+'\'s tab?\\n\\n'+(items)),'g',()=>{
+  showConf('Add to Tab',('Add '+(fmt(total))+' to '+(m.name)+'\'s tab?\n\n'+(items)),'g',()=>{
     const txId=uid();
     S.transactions.push({id:txId,memberId:curMid,amount:-total,desc:items,date:new Date().toISOString(),type:'purchase',enteredBy:currentUser.id,enteredByName:currentUser.name,device:sessionDevice});
     Object.entries(cart).filter(([,q])=>q>0).forEach(([id,q])=>{ const dk=S.drinks.find(x=>String(x.id)===String(id)); if(dk) dk.stock=Math.max(0,(dk.stock||0)-q); });
