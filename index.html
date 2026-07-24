@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.34  (2026-05-28)                              ║
+  ║  Version: 4.35  (2026-07-24)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.35 2026-07-24  Sync dedups drinks by name (cloud wins) ║
+  ║                    Fix Duplicate Drinks admin cleanup      ║
+  ║                    Bulk Correct Drink Price admin tool     ║
   ║  v4.34 2026-05-28  Fix new drinks lost on sync race        ║
   ║                    Pause sync while drink edit modal open  ║
   ║                    Add search bar to Drinks & Stock        ║
@@ -76,7 +79,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.34">
+<meta name="app-version" content="4.35">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -784,6 +787,30 @@ select.fin{cursor:pointer;}
 </div>
 
 <!-- STOCK PURCHASE MODAL -->
+<!-- BULK PRICE CORRECTION MODAL -->
+<div class="mover" id="priceFixMov">
+  <div class="mbox">
+    <h2>💰 Bulk Correct Drink Price</h2>
+    <p>Retroactively update a drink's price across historical purchase transactions. Member balances will be recalculated.</p>
+    <label class="edit-label">Drink *</label>
+    <select id="pf-drink" class="fin" style="width:100%;margin-bottom:7px;" onchange="pfDrinkChanged()"></select>
+    <div style="display:flex;gap:7px;">
+      <div style="flex:1;"><label class="edit-label">Old Price (R) *</label><input id="pf-old" class="fin" type="number" min="0" step="0.01" placeholder="e.g. 20" style="width:100%;"></div>
+      <div style="flex:1;"><label class="edit-label">New Price (R) *</label><input id="pf-new" class="fin" type="number" min="0" step="0.01" placeholder="e.g. 25" style="width:100%;"></div>
+    </div>
+    <div style="display:flex;gap:7px;">
+      <div style="flex:1;"><label class="edit-label">From date *</label><input id="pf-from" class="fin" type="date" style="width:100%;"></div>
+      <div style="flex:1;"><label class="edit-label">To date (optional)</label><input id="pf-to" class="fin" type="date" style="width:100%;"></div>
+    </div>
+    <button onclick="previewPriceFix()" style="width:100%;padding:9px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);cursor:pointer;font-size:.85rem;margin:8px 0;">🔍 Preview matching transactions</button>
+    <div id="pf-preview" style="max-height:220px;overflow-y:auto;font-size:.72rem;color:var(--muted);padding:8px;background:var(--surface2);border-radius:var(--radius-sm);display:none;"></div>
+    <div class="mbox-btns">
+      <button class="mb-cancel" onclick="closePriceFix()">Cancel</button>
+      <button class="mb-ok g" id="pf-apply" onclick="applyPriceFix()" disabled style="opacity:.4;">Apply Correction</button>
+    </div>
+  </div>
+</div>
+
 <div class="mover" id="stockPurchMov">
   <div class="mbox">
     <h2>🛒 Stock Purchase</h2>
@@ -1052,8 +1079,8 @@ select.fin{cursor:pointer;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.34';
-const APP_BUILD = '2026-05-28';
+const APP_VERSION = '4.35';
+const APP_BUILD = '2026-07-24';
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL
@@ -1264,10 +1291,13 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
         }
         
         // Drinks: cloud wins on conflict, but preserve any new local drinks
-        // (e.g. just-added drinks whose force-push hasn't completed yet)
+        // (e.g. just-added drinks whose force-push hasn't completed yet).
+        // Also dedup by name (case-insensitive) — same drink added on two
+        // devices with different IDs would otherwise appear twice.
         if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
           const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
-          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id)));
+          const cloudDrinkNames=new Set(cloud.drinks.map(d=>(d.name||'').toLowerCase().trim()));
+          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id))&&!cloudDrinkNames.has((d.name||'').toLowerCase().trim()));
           S.drinks=cloud.drinks.concat(newLocalDrinks);
         }
         // Stock purchases: cloud + new local
@@ -1949,7 +1979,7 @@ function renderManager(){
   const isAdmin=currentUser&&currentUser.role==='admin';
   let adminHtml='';
   if(isAdmin){
-    adminHtml='<div class="sec-hdr">Admin</div>\n    <div class="action-row" onclick="goTo(\'sUsers\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">👤</div><div class="ar-text"><h3>User Accounts</h3><p>PINs · roles · access levels</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sSettings\')"><div class="ar-icon" style="background:rgba(127,160,160,.18)">⚙️</div><div class="ar-text"><h3>Settings</h3><p>Device · cloud · SMS · Telegram</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Data Import</div>\n    <div class="action-row" onclick="openHistoryImport()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📜</div><div class="ar-text"><h3>Import Old App History</h3><p>Import transactions from previous CCC Bar app Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(46,204,113,.3)" onclick="cleanReimport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3 style="color:var(--green)">Clean Reimport (One Click)</h3><p>Clear + Import + Force Push — no sync interference</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="fixDuplicateBalances()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">🔧</div><div class="ar-text"><h3>Fix Duplicate Balances</h3><p>Remove balance corrections created during member import</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="debugTransactions()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">🔍</div><div class="ar-text"><h3>Debug Transactions</h3><p>Show transaction analysis report</p></div><div class="ar-chev">›</div></div>\n    <hr class="divider">\n    <div class="action-row" style="border-color:rgba(231,76,60,.3)" onclick="clearAllTx()"><div class="ar-icon" style="background:rgba(231,76,60,.12)">🗑</div><div class="ar-text"><h3 style="color:var(--red)">Clear All Transactions</h3><p>Reset all balances — cannot be undone</p></div></div>';
+    adminHtml='<div class="sec-hdr">Admin</div>\n    <div class="action-row" onclick="goTo(\'sUsers\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">👤</div><div class="ar-text"><h3>User Accounts</h3><p>PINs · roles · access levels</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sSettings\')"><div class="ar-icon" style="background:rgba(127,160,160,.18)">⚙️</div><div class="ar-text"><h3>Settings</h3><p>Device · cloud · SMS · Telegram</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Data Import</div>\n    <div class="action-row" onclick="openHistoryImport()"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📜</div><div class="ar-text"><h3>Import Old App History</h3><p>Import transactions from previous CCC Bar app Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(46,204,113,.3)" onclick="cleanReimport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3 style="color:var(--green)">Clean Reimport (One Click)</h3><p>Clear + Import + Force Push — no sync interference</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="fixDuplicateBalances()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">🔧</div><div class="ar-text"><h3>Fix Duplicate Balances</h3><p>Remove balance corrections created during member import</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="fixDuplicateDrinks()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">🍺</div><div class="ar-text"><h3>Fix Duplicate Drinks</h3><p>Merge drinks with the same name (keeps highest stock, then force pushes)</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="openPriceFix()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">💰</div><div class="ar-text"><h3>Bulk Correct Drink Price</h3><p>Retroactively correct a drink price across historical transactions</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="debugTransactions()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">🔍</div><div class="ar-text"><h3>Debug Transactions</h3><p>Show transaction analysis report</p></div><div class="ar-chev">›</div></div>\n    <hr class="divider">\n    <div class="action-row" style="border-color:rgba(231,76,60,.3)" onclick="clearAllTx()"><div class="ar-icon" style="background:rgba(231,76,60,.12)">🗑</div><div class="ar-text"><h3 style="color:var(--red)">Clear All Transactions</h3><p>Reset all balances — cannot be undone</p></div></div>';
   }
   const lowText=low?('⚠️ '+low+' item(s) low'):'All stock OK';
   document.getElementById('managerBody').innerHTML=('\n    <div class="sec-hdr">Members</div>\n    <div class="action-row" onclick="goTo(\'sMemMan\')"><div class="ar-icon" style="background:rgba(0,136,204,.18)">👥</div><div class="ar-text"><h3>Manage Members</h3><p>Add · edit · photos · import</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Bar Menu &amp; Stock</div>\n    <div class="action-row" onclick="goTo(\'sStock\');"><div class="ar-icon" style="background:rgba(39,174,96,.18)">🍺</div><div class="ar-text"><h3>Drinks &amp; Stock</h3><p>Prices · stock levels · categories · import</p></div><div class="ar-chev">›</div></div>\n    \n    <div class="sec-hdr">Notifications</div>\n    <div class="action-row" onclick="sendAllSMS()"><div class="ar-icon" style="background:rgba(230,126,34,.18)">📱</div><div class="ar-text"><h3>SMS All Members</h3><p>Bulk balance SMS to all members</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendLowStockAlert()"><div class="ar-icon" style="background:rgba(41,182,246,.18)">📬</div><div class="ar-text"><h3>Send Low Stock Alert</h3><p>Telegram + SMS to admins now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="sendFullStockReport()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">📋</div><div class="ar-text"><h3>Send Full Stock Report</h3><p>Complete fridge inventory to admins</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Cloud</div>\n    <div class="action-row" onclick="fetchFromCloud()"><div class="ar-icon" style="background:rgba(0,212,255,.18)">☁️</div><div class="ar-text"><h3>Merge Sync</h3><p>Pull cloud data and merge with local</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="syncNow(true)"><div class="ar-icon" style="background:rgba(0,212,255,.18)">⬆️</div><div class="ar-text"><h3>Save to Cloud</h3><p>Push all data to Google Sheets now</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" style="border-color:rgba(243,156,18,.3)" onclick="forcePushToCloud()"><div class="ar-icon" style="background:rgba(243,156,18,.18)">⚡</div><div class="ar-text"><h3 style="color:var(--orange)">Force Push (Overwrite Cloud)</h3><p>Replace cloud with this device</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="initFromCloud()"><div class="ar-icon" style="background:rgba(46,204,113,.18)">🔄</div><div class="ar-text"><h3>Initialize Device</h3><p>First-time setup — download all from cloud</p></div><div class="ar-chev">›</div></div>\n    <div class="sec-hdr">Reports &amp; Audit</div>\n    <div class="action-row" onclick="goTo(\'sReports\')"><div class="ar-icon" style="background:rgba(241,196,15,.18)">📊</div><div class="ar-text"><h3>Reports &amp; Export</h3><p>Balance sheets · stock · Excel export</p></div><div class="ar-chev">›</div></div>\n    <div class="action-row" onclick="goTo(\'sAudit\')"><div class="ar-icon" style="background:rgba(155,89,182,.18)">🔍</div><div class="ar-text"><h3>Audit Log</h3><p>Full record of who did what and when</p></div><div class="ar-chev">›</div></div>\n    '+(adminHtml));
@@ -2942,6 +2972,123 @@ function clearAllTx(){
     toast('🗑 All cleared — sync paused. Import then Force Push.');
     renderHome();
   }));
+}
+
+// ═══════════════════════════════════════════════════════════
+// BULK PRICE CORRECTION
+// ═══════════════════════════════════════════════════════════
+let _pfMatches=null;
+function openPriceFix(){
+  _syncPaused=true; _pfMatches=null;
+  const sel=document.getElementById('pf-drink');
+  sel.innerHTML='<option value="">— Select drink —</option>'+
+    [...S.drinks].sort((a,b)=>(a.name||'').localeCompare(b.name||''))
+      .map(d=>'<option value="'+d.id+'" data-price="'+d.price+'">'+esc(d.name)+' (currently R'+d.price.toFixed(2)+')</option>').join('');
+  document.getElementById('pf-old').value='';
+  document.getElementById('pf-new').value='';
+  document.getElementById('pf-from').value='';
+  document.getElementById('pf-to').value='';
+  document.getElementById('pf-preview').style.display='none';
+  document.getElementById('pf-preview').innerHTML='';
+  const ap=document.getElementById('pf-apply'); ap.disabled=true; ap.style.opacity='.4';
+  document.getElementById('priceFixMov').classList.add('on');
+}
+function closePriceFix(){ _syncPaused=false; document.getElementById('priceFixMov').classList.remove('on'); }
+function pfDrinkChanged(){
+  const sel=document.getElementById('pf-drink'); const opt=sel.options[sel.selectedIndex];
+  if(opt&&opt.value){ document.getElementById('pf-new').value=opt.getAttribute('data-price')||''; }
+}
+function _pfExtractQty(desc,drinkName){
+  // desc example: "🍷 Red Wine ×2, 💧 Sparkling Water ×1"
+  // Sum every match of "<drinkName> ×N" (case-insensitive; strip leading emoji/spaces).
+  if(!desc||!drinkName) return 0;
+  const parts=String(desc).split(/,\s*/);
+  const target=drinkName.toLowerCase().trim();
+  let sum=0;
+  parts.forEach(p=>{
+    const m=p.match(/×\s*(\d+)\s*$/); if(!m) return;
+    const qty=parseInt(m[1])||0;
+    const label=p.slice(0,m.index).replace(/^[^A-Za-z0-9]+/,'').toLowerCase().trim();
+    if(label===target) sum+=qty;
+  });
+  return sum;
+}
+function previewPriceFix(){
+  const drinkId=document.getElementById('pf-drink').value;
+  const oldP=parseFloat(document.getElementById('pf-old').value);
+  const newP=parseFloat(document.getElementById('pf-new').value);
+  const from=document.getElementById('pf-from').value;
+  const to=document.getElementById('pf-to').value;
+  const prev=document.getElementById('pf-preview'); prev.style.display='block';
+  const ap=document.getElementById('pf-apply'); ap.disabled=true; ap.style.opacity='.4';
+  if(!drinkId||isNaN(oldP)||isNaN(newP)||!from){ prev.innerHTML='⚠️ Fill in drink, old price, new price, and a from-date.'; return; }
+  const dk=S.drinks.find(x=>String(x.id)===String(drinkId)); if(!dk){ prev.innerHTML='⚠️ Drink not found.'; return; }
+  const fromT=new Date(from+'T00:00:00').getTime();
+  const toT=to?new Date(to+'T23:59:59').getTime():Date.now();
+  const matches=[];
+  S.transactions.forEach(t=>{
+    if(t.type&&t.type!=='purchase') return;
+    const tt=new Date(t.date).getTime(); if(isNaN(tt)||tt<fromT||tt>toT) return;
+    const qty=_pfExtractQty(t.desc,dk.name); if(!qty) return;
+    const delta=qty*(newP-oldP); // extra debit needed
+    matches.push({tx:t,qty,delta});
+  });
+  _pfMatches={drinkId,drinkName:dk.name,oldP,newP,matches};
+  if(!matches.length){ prev.innerHTML='ℹ️ No purchase transactions matching '+esc(dk.name)+' at R'+oldP.toFixed(2)+' from '+from+(to?' to '+to:'')+'.'; return; }
+  const totalDelta=matches.reduce((s,m)=>s+m.delta,0);
+  const membersHit=new Set(matches.map(m=>String(m.tx.memberId))).size;
+  const rows=matches.slice(0,20).map(m=>{
+    const mem=S.members.find(x=>String(x.id)===String(m.tx.memberId));
+    return '<div style="padding:4px 0;border-bottom:1px solid var(--border);">'+fmtDate(m.tx.date)+' · '+esc(mem?mem.name:'?')+' · '+esc(m.tx.desc||'')+' → ×'+m.qty+' @ +R'+m.delta.toFixed(2)+'</div>';
+  }).join('');
+  prev.innerHTML='<div style="color:var(--text);margin-bottom:6px;"><b>'+matches.length+'</b> transaction(s) across <b>'+membersHit+'</b> member(s). Total extra debit: <b>R'+totalDelta.toFixed(2)+'</b>.</div>'+rows+(matches.length>20?'<div style="padding:4px 0;font-style:italic;">…and '+(matches.length-20)+' more</div>':'');
+  ap.disabled=false; ap.style.opacity='1';
+}
+function applyPriceFix(){
+  if(!_pfMatches||!_pfMatches.matches.length){ toast('⚠️ Run preview first'); return; }
+  const {drinkName,oldP,newP,matches}=_pfMatches;
+  showConf('Apply Price Correction','Update '+matches.length+' transaction(s): '+drinkName+' from R'+oldP.toFixed(2)+' to R'+newP.toFixed(2)+'? Member balances will change accordingly.','g',()=>{
+    matches.forEach(m=>{
+      const before=Number(m.tx.amount)||0;
+      m.tx.amount=before - m.delta; // amount is negative for purchases; delta adds debit
+      m.tx.priceCorrected=true;
+    });
+    auditLog('Bulk price correction: '+drinkName+' R'+oldP.toFixed(2)+' → R'+newP.toFixed(2)+' across '+matches.length+' tx (Δ R'+matches.reduce((s,m)=>s+m.delta,0).toFixed(2)+')','admin',{drinkName,oldP,newP,count:matches.length});
+    invalidateBalCache();
+    _pfMatches=null;
+    saveLocal(); syncNow(false,true);
+    closePriceFix();
+    toast('✅ Corrected '+matches.length+' transaction(s) — pushing to cloud');
+  });
+}
+
+function fixDuplicateDrinks(){
+  // Group drinks by lowercased name, pick the one with highest stock as the keeper.
+  // Rewrite tx/stock_purchase drinkId refs to point at the keeper, then delete the losers.
+  const byName=new Map();
+  S.drinks.forEach(d=>{
+    const k=(d.name||'').toLowerCase().trim(); if(!k) return;
+    if(!byName.has(k)) byName.set(k,[]);
+    byName.get(k).push(d);
+  });
+  const idRemap={}; let dupeCount=0;
+  const keepers=[];
+  byName.forEach((group,k)=>{
+    if(group.length===1){ keepers.push(group[0]); return; }
+    // Winner = highest stock; ties → longest-id string as tiebreaker for determinism
+    group.sort((a,b)=>((b.stock||0)-(a.stock||0))||String(b.id).length-String(a.id).length);
+    const keeper=group[0]; keepers.push(keeper);
+    for(let i=1;i<group.length;i++){ idRemap[String(group[i].id)]=String(keeper.id); dupeCount++; }
+  });
+  if(!dupeCount){ toast('ℹ️ No duplicate drinks found'); return; }
+  showConf('Fix Duplicate Drinks','Found '+dupeCount+' duplicate drink entries. Merge them (keeping the highest-stock copy of each) and force push to cloud?','g',()=>{
+    S.drinks=keepers;
+    (S.stock_purchases||[]).forEach(p=>{ if(idRemap[String(p.drinkId)]) p.drinkId=idRemap[String(p.drinkId)]; });
+    auditLog('Merged '+dupeCount+' duplicate drink(s)','admin',{remapped:idRemap});
+    saveLocal(); syncNow(false,true);
+    toast('✅ Merged '+dupeCount+' duplicate drink(s)');
+    if(document.getElementById('sStock').classList.contains('on')) renderStock();
+  });
 }
 
 function fixDuplicateBalances(){
