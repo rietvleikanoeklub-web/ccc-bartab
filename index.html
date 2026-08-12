@@ -2,9 +2,13 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.36  (2026-07-24)                              ║
+  ║  Version: 4.37  (2026-08-11)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.37 2026-08-11  Deleted drinks stay deleted (tombstones)║
+  ║                    Stale devices no longer resurrect them  ║
+  ║                    Re-adding a deleted name clears its     ║
+  ║                    tombstone                               ║
   ║  v4.36 2026-07-24  Hide inventory UI (TRACK_INVENTORY=false)║
   ║                    Stock Count tab, in-stock labels, low   ║
   ║                    stock alerts, stock decrement all off   ║
@@ -83,7 +87,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.36">
+<meta name="app-version" content="4.37">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1084,8 +1088,8 @@ body.no-inventory .stock-only{display:none !important;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.36';
-const APP_BUILD = '2026-07-24';
+const APP_VERSION = '4.37';
+const APP_BUILD = '2026-08-11';
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
 // labels, low-stock alerts, stock decrement on purchase). When false, the
@@ -1111,6 +1115,7 @@ const DEFAULT_USERS = [
 
 let S = {
   members:[], drinks:[], transactions:[], stock_purchases:[], audit:[],
+  deletedDrinks:[], // tombstones {id,name,date} — stop deleted drinks resurrecting via sync
   users: [], // Users come from cloud — never hardcode PINs
   settings:{
     barName:'CCC Bar', currency:'R', deviceName:'Galaxy Tab',
@@ -1238,6 +1243,23 @@ function normalizeData(){
   S.drinks.forEach(d=>{ d.id=String(d.id||''); d.price=Number(d.price)||0; d.stock=Number(d.stock)||0; d.threshold=Number(d.threshold)||5; });
   (S.stock_purchases||[]).forEach(p=>{ p.id=String(p.id||''); p.drinkId=String(p.drinkId||''); p.paidBy=String(p.paidBy||''); p.qty=Number(p.qty)||0; p.cost=Number(p.cost)||0; });
   S.users.forEach(u=>{ u.id=String(u.id||''); });
+  if(!Array.isArray(S.deletedDrinks)) S.deletedDrinks=[];
+  // prune tombstones older than 180 days
+  const cutoff=Date.now()-180*24*60*60*1000;
+  S.deletedDrinks=S.deletedDrinks.filter(t=>{ const d=new Date(t.date).getTime(); return isNaN(d)||d>cutoff; });
+}
+
+// A drink is "tombstoned" if its id or its name was deliberately deleted.
+// Name matters as much as id: the same drink often has different ids on
+// different devices, which is how deletions came back from the dead.
+function isTombstoned(dk){
+  const id=String(dk.id||''), nm=String(dk.name||'').toLowerCase().trim();
+  return (S.deletedDrinks||[]).some(t=>String(t.id)===id||String(t.name||'').toLowerCase().trim()===nm);
+}
+function tombstoneDrink(dk){
+  S.deletedDrinks=S.deletedDrinks||[];
+  if(!S.deletedDrinks.some(t=>String(t.id)===String(dk.id)))
+    S.deletedDrinks.push({id:String(dk.id),name:String(dk.name||''),date:new Date().toISOString()});
 }
 
 function setSyncStatus(st,lbl){
@@ -1267,7 +1289,7 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
           }
         }catch(e){/* offline — push current users as-is */}
       }
-      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})});
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users})});
       if(!r.ok) throw new Error('HTTP '+r.status);
     } else {
       // CLOUD-AS-TRUTH SYNC: cloud wins, only add genuinely new local items
@@ -1315,7 +1337,15 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
         if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
           const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
           const cloudDrinkNames=new Set(cloud.drinks.map(d=>(d.name||'').toLowerCase().trim()));
-          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id))&&!cloudDrinkNames.has((d.name||'').toLowerCase().trim()));
+          // Merge tombstones from cloud FIRST, so a drink deleted on another
+          // device isn't treated as a "new local drink" and pushed back up.
+          if(Array.isArray(cloud.deletedDrinks)){
+            const seenT=new Set((S.deletedDrinks||[]).map(t=>String(t.id)));
+            cloud.deletedDrinks.forEach(t=>{ if(!seenT.has(String(t.id))){ S.deletedDrinks.push(t); seenT.add(String(t.id)); } });
+          }
+          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id))
+            &&!cloudDrinkNames.has((d.name||'').toLowerCase().trim())
+            &&!isTombstoned(d));
           S.drinks=cloud.drinks.concat(newLocalDrinks);
         }
         // Stock purchases: cloud + new local
@@ -1337,7 +1367,7 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
       }
       
       // Push result back to cloud
-      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})});
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users})});
       if(!r.ok) throw new Error('HTTP '+r.status);
     }
     
@@ -1873,6 +1903,10 @@ function saveEditDrink(){
   let img=editDrinkEmoji,imgType='emoji';
   if(editDrinkImgType==='photo'&&editDrinkPhoto){img=editDrinkPhoto;imgType='photo';}
   else if(editDrinkImgType==='logo'&&editDrinkLogoUrl){img=editDrinkLogoUrl;imgType='logo';}
+  // Re-adding a previously deleted name must clear its tombstone, else the
+  // sync merge would treat the new drink as deleted and drop it again.
+  const nmKey=name.toLowerCase().trim();
+  S.deletedDrinks=(S.deletedDrinks||[]).filter(t=>String(t.name||'').toLowerCase().trim()!==nmKey&&String(t.id)!==String(editingDrinkId||''));
   if(!editingDrinkId){ S.drinks.push({id:uid(),name,imgType,img,price,stock,threshold,category}); auditLog(('Added drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' added')); }
   else { const dk=S.drinks.find(x=>String(x.id)===String(editingDrinkId)); Object.assign(dk,{name,imgType,img,price,stock,threshold,category}); auditLog(('Edited drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' updated')); }
   closeEditDrink(); saveLocal(); syncNow(false,true); renderDrinkMan();
@@ -2036,7 +2070,7 @@ function delMember(id){
 function renderDrinkMan(){ dsTabMode='manage'; renderStock(); }
 
 function updDrink(id,f,v){ const dk=S.drinks.find(x=>String(x.id)===String(id)); if(dk){dk[f]=v;saveLocal();syncNow(false,true);} }
-function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});S.drinks=S.drinks.filter(x=>String(x.id)!==String(id));saveLocal();syncNow(false,true);renderStock();toast('🗑 Removed');})); }
+function delDrink(id){ const dk=S.drinks.find(x=>String(x.id)===String(id)); showConf('Remove Drink',('Remove '+(dk.name)+'?'),'',(()=>{auditLog(('Deleted drink: '+(dk.name)),'admin',{});tombstoneDrink(dk);S.drinks=S.drinks.filter(x=>String(x.id)!==String(id));saveLocal();syncNow(false,true);renderStock();toast('🗑 Removed');})); }
 
 function openAddDrink(){ openEditDrink(null); }
 
@@ -2869,7 +2903,7 @@ function doImport(){ if(!importData.length){toast('⚠️ No data');return;} let
   saveLocal(); closeImport();
   if(importMode==='members')renderMemMan();else{dsTabMode='stock';renderStock();}
   // Force push immediately — no merge can interfere
-  fetch(S.settings.sheetsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],settings:S.settings,users:S.users})}).then(function(r){return r.json();}).then(function(j){_syncPaused=false;_localDirty=false;toast('✅ Pushed to cloud');}).catch(function(e){_syncPaused=false;toast('⚠️ Saved locally — sync manually');}); }
+  fetch(S.settings.sheetsUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users})}).then(function(r){return r.json();}).then(function(j){_syncPaused=false;_localDirty=false;toast('✅ Pushed to cloud');}).catch(function(e){_syncPaused=false;toast('⚠️ Saved locally — sync manually');}); }
 
 // ═══════════════════════════════════════════════════════════
 // HISTORY IMPORT (Old CCC Bar App)
