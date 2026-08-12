@@ -2,9 +2,13 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.38  (2026-08-11)                              ║
+  ║  Version: 4.39  (2026-08-11)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.39 2026-08-11  Style the Manage drink rows — the       ║
+  ║                    .drink-row/.dr-chip classes had no CSS  ║
+  ║                    so rows stacked and chips ran together  ║
+  ║                    as "R 15Soda"                           ║
   ║  v4.38 2026-08-11  Retry cloud reads AND writes            ║
   ║                    Apps Script intermittently serves an    ║
   ║                    HTML interim page (~50% of calls) which ║
@@ -92,7 +96,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.38">
+<meta name="app-version" content="4.39">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -544,6 +548,17 @@ select.fin{cursor:pointer;}
 .stock-wrap span{color:var(--muted);font-size:var(--font-xs);}
 .stock-wrap input{background:transparent;border:none;color:var(--text);font-family:'Barlow',sans-serif;font-size:var(--font-xs);width:36px;outline:none;text-align:right;}
 .del-btn{background:rgba(231,76,60,.15);border:none;color:var(--red);width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:.88rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+/* Drink rows on the Manage tab. These classes had no styling at all, so the
+   row stacked vertically and the price/category chips ran together ("R 15Soda"). */
+.drink-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:var(--pad);margin-bottom:var(--gap);display:flex;align-items:center;gap:clamp(9px,2vw,13px);cursor:pointer;}
+.drink-row:active{background:var(--surface2);}
+.dr-img{width:clamp(34px,7vw,42px);height:clamp(34px,7vw,42px);border-radius:9px;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
+.dr-img img{width:100%;height:100%;object-fit:contain;}
+.dr-info{flex:1;min-width:0;}
+.dr-name{font-weight:600;font-size:var(--font-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dr-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;}
+.dr-chip{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:var(--font-xs);color:var(--muted);white-space:nowrap;}
+.dr-chip:first-child{color:var(--accent);}
 
 /* ── MEMBER MANAGEMENT ── */
 .mm-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:clamp(9px,2vw,12px) clamp(10px,2.5vw,14px);display:flex;align-items:center;gap:clamp(7px,2vw,11px);margin-bottom:var(--gap);}
@@ -1093,7 +1108,7 @@ body.no-inventory .stock-only{display:none !important;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.38';
+const APP_VERSION = '4.39';
 const APP_BUILD = '2026-08-11';
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
