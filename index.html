@@ -2,9 +2,14 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.37  (2026-08-11)                              ║
+  ║  Version: 4.38  (2026-08-11)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.38 2026-08-11  Retry cloud reads AND writes            ║
+  ║                    Apps Script intermittently serves an    ║
+  ║                    HTML interim page (~50% of calls) which ║
+  ║                    was silently failing syncs and losing   ║
+  ║                    local edits                             ║
   ║  v4.37 2026-08-11  Deleted drinks stay deleted (tombstones)║
   ║                    Stale devices no longer resurrect them  ║
   ║                    Re-adding a deleted name clears its     ║
@@ -87,7 +92,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.37">
+<meta name="app-version" content="4.38">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1088,7 +1093,7 @@ body.no-inventory .stock-only{display:none !important;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.37';
+const APP_VERSION = '4.38';
 const APP_BUILD = '2026-08-11';
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
@@ -1262,6 +1267,49 @@ function tombstoneDrink(dk){
     S.deletedDrinks.push({id:String(dk.id),name:String(dk.name||''),date:new Date().toISOString()});
 }
 
+// Apps Script /exec redirects to googleusercontent.com, which intermittently
+// serves an HTML interim page instead of our JSON — measured at roughly half
+// of all requests. Calling .json() on that throws and the whole sync is
+// reported as failed, which is how good local changes get reverted by the
+// next successful merge. Retry until we actually get JSON.
+async function cloudGet(url,tries=4){
+  let lastErr=null;
+  for(let i=0;i<tries;i++){
+    try{
+      const r=await fetch(url);
+      if(!r.ok){ lastErr=new Error('HTTP '+r.status); }
+      else{
+        const t=await r.text();
+        if(t.charAt(0)==='{'){ const j=JSON.parse(t); if(j.ok&&j.data) return j.data; lastErr=new Error('payload not ok'); }
+        else lastErr=new Error('non-JSON response (interim page)');
+      }
+    }catch(e){ lastErr=e; }
+    if(i<tries-1) await new Promise(r=>setTimeout(r,400*(i+1)));
+  }
+  throw lastErr||new Error('cloudGet failed');
+}
+
+// Same interim-page problem on the way up: a 200 carrying HTML looks like a
+// successful save but nothing was written. doPost overwrites the whole
+// document with the payload, so retrying is idempotent and safe.
+async function cloudPost(url,payload,tries=3){
+  const body=JSON.stringify(payload);
+  let lastErr=null;
+  for(let i=0;i<tries;i++){
+    try{
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body});
+      if(!r.ok){ lastErr=new Error('HTTP '+r.status); }
+      else{
+        const t=await r.text();
+        if(t.charAt(0)==='{'){ const j=JSON.parse(t); if(j.ok) return j; lastErr=new Error(j.error||'save rejected'); }
+        else lastErr=new Error('non-JSON response (interim page)');
+      }
+    }catch(e){ lastErr=e; }
+    if(i<tries-1) await new Promise(r=>setTimeout(r,600*(i+1)));
+  }
+  throw lastErr||new Error('cloudPost failed');
+}
+
 function setSyncStatus(st,lbl){
   syncStatus=st;
   ['syncDot','syncDot2'].forEach(id=>{const el=document.getElementById(id);if(el)el.className='sync-dot '+st;});
@@ -1278,26 +1326,20 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
       // Prevents stale local users from clobbering PIN/user changes made on another device.
       if(!isUserEdit){
         try{
-          const check=await fetch(url);
-          if(check.ok){
-            const cj=await check.json();
-            if(cj.ok && cj.data && Array.isArray(cj.data.users) && cj.data.users.length>0){
-              S.users=cj.data.users;
-              S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
-              console.log('[FORCE-PUSH] Refreshed '+S.users.length+' users from cloud before push');
-            }
+          const cd=await cloudGet(url);
+          if(Array.isArray(cd.users) && cd.users.length>0){
+            S.users=cd.users;
+            S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
+            console.log('[FORCE-PUSH] Refreshed '+S.users.length+' users from cloud before push');
           }
         }catch(e){/* offline — push current users as-is */}
       }
-      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users})});
-      if(!r.ok) throw new Error('HTTP '+r.status);
+      await cloudPost(url,{members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users});
     } else {
       // CLOUD-AS-TRUTH SYNC: cloud wins, only add genuinely new local items
       let cloud=null;
-      try{
-        const check=await fetch(url);
-        if(check.ok){ const cj=await check.json(); if(cj.ok&&cj.data) cloud=cj.data; }
-      }catch(e){/* offline — push local only */}
+      try{ cloud=await cloudGet(url); }
+      catch(e){ console.warn('[SYNC] cloud read failed after retries:',e.message); }
 
       if(cloud){
         console.log('[SYNC] Cloud: '+((cloud.transactions||[]).length)+' tx, '+((cloud.users||[]).length)+' users');
@@ -1367,8 +1409,7 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
       }
       
       // Push result back to cloud
-      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users})});
-      if(!r.ok) throw new Error('HTTP '+r.status);
+      await cloudPost(url,{members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users});
     }
     
     const t=new Date(); setSyncStatus('synced',('Synced '+(t.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}))));
@@ -1388,8 +1429,7 @@ async function initFromCloud(){
     setSyncStatus('syncing','Initializing…');
     toast('☁️ Downloading from cloud…');
     try{
-      const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
-      const j=await r.json();
+      const j={ok:true,data:await cloudGet(url,5)};
       if(j.ok&&j.data){
         const d=j.data;
         if(Array.isArray(d.members)) S.members=d.members;
