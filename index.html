@@ -2,9 +2,14 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.40  (2026-11-02)                              ║
+  ║  Version: 4.41  (2026-11-12)                              ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.41 2026-11-12  Re-added drinks beat older tombstones   ║
+  ║                    A tombstone only suppresses a drink if  ║
+  ║                    it is newer than that drink. Re-adding  ║
+  ║                    marks revivedAt (latest-wins). A failed ║
+  ║                    cloud read aborts instead of posting    ║
   ║  v4.40 2026-11-02  Statement CC label follows admin list   ║
   ║  v4.39 2026-08-11  Style the Manage drink rows — the       ║
   ║                    .drink-row/.dr-chip classes had no CSS  ║
@@ -97,7 +102,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="app-version" content="4.40">
+<meta name="app-version" content="4.41">
 <title>CCC Bar Tab</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1109,8 +1114,8 @@ body.no-inventory .stock-only{display:none !important;}
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.40';
-const APP_BUILD = '2026-11-02';
+const APP_VERSION = '4.41';
+const APP_BUILD = '2026-11-12';
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
 // labels, low-stock alerts, stock decrement on purchase). When false, the
@@ -1145,7 +1150,7 @@ const ADMIN_CC_NAMES={
 
 let S = {
   members:[], drinks:[], transactions:[], stock_purchases:[], audit:[],
-  deletedDrinks:[], // tombstones {id,name,date} — stop deleted drinks resurrecting via sync
+  deletedDrinks:[], // tombstones {id,name,date,revivedAt?} — a deletion suppresses a drink only while it is newer than that drink
   users: [], // Users come from cloud — never hardcode PINs
   settings:{
     barName:'CCC Bar', currency:'R', deviceName:'Galaxy Tab',
@@ -1171,6 +1176,7 @@ let autoLockTimer = null;
 let syncStatus = 'offline';
 let syncTimer = null;
 let _localDirty = false; // Track if local data changed since last sync
+let _cloudReadFailed = false; // Last normal sync could not read JSON; retry, do not post
 let _syncPaused = false; // Pause auto-sync during admin operations
 
 const EMOJIS = ['🍺','🍻','🍷','🥂','🥤','💧','⚡','🍋','🍫','🧃','☕','🧋','🍸','🍹','🥛'];
@@ -1274,22 +1280,232 @@ function normalizeData(){
   (S.stock_purchases||[]).forEach(p=>{ p.id=String(p.id||''); p.drinkId=String(p.drinkId||''); p.paidBy=String(p.paidBy||''); p.qty=Number(p.qty)||0; p.cost=Number(p.cost)||0; });
   S.users.forEach(u=>{ u.id=String(u.id||''); });
   if(!Array.isArray(S.deletedDrinks)) S.deletedDrinks=[];
-  // prune tombstones older than 180 days
-  const cutoff=Date.now()-180*24*60*60*1000;
-  S.deletedDrinks=S.deletedDrinks.filter(t=>{ const d=new Date(t.date).getTime(); return isNaN(d)||d>cutoff; });
+  // Drop tombstones with no activity in 180 days. A recent revivedAt keeps
+  // the record even when the original deletion date is old.
+  S.deletedDrinks=pruneDeletedDrinks(S.deletedDrinks, Date.now());
 }
 
-// A drink is "tombstoned" if its id or its name was deliberately deleted.
-// Name matters as much as id: the same drink often has different ids on
-// different devices, which is how deletions came back from the dead.
-function isTombstoned(dk){
-  const id=String(dk.id||''), nm=String(dk.name||'').toLowerCase().trim();
-  return (S.deletedDrinks||[]).some(t=>String(t.id)===id||String(t.name||'').toLowerCase().trim()===nm);
+/* SYNC_PURE_START */
+// Pure sync/tombstone helpers. No DOM, no network, no global S.
+// test/sync-tombstone.test.js evaluates this block in isolation and must
+// stay free of fetch, storage, and the live cloud URL.
+function drinkNameKey(name){
+  return String(name||'').toLowerCase().trim();
 }
+function timeMs(v){
+  if(v==null||v==='') return NaN;
+  if(typeof v==='number') return isFinite(v)?v:NaN;
+  const n=new Date(v).getTime();
+  return n;
+}
+function maxMs(values){
+  let best=0;
+  for(let i=0;i<values.length;i++){
+    const n=timeMs(values[i]);
+    if(!isNaN(n)&&n>best) best=n;
+  }
+  return best;
+}
+// When the drink was created or last saved. Missing stamps count as 0 so a
+// real deletion still hides legacy rows that never recorded a time.
+function drinkActivityMs(dk){
+  if(!dk) return 0;
+  return maxMs([dk.updatedAt, dk.createdAt, dk.updated, dk.created]);
+}
+// Deletion instant. revivedAt is not a deletion.
+function tombstoneDeletionMs(t){
+  if(!t) return 0;
+  return maxMs([t.date, t.deletedAt, t.created, t.createdAt]);
+}
+function tombstoneRevivedMs(t){
+  if(!t) return 0;
+  const n=timeMs(t.revivedAt);
+  return isNaN(n)||n<0?0:n;
+}
+function tombstoneActivityMs(t){
+  if(!t) return 0;
+  return Math.max(tombstoneDeletionMs(t), tombstoneRevivedMs(t), maxMs([t.updatedAt]));
+}
+// A revival at or after the deletion supersedes it. Undated legacy
+// tombstones stay "active" so older phones' deletes still hold.
+function tombstoneSuppresses(t){
+  const del=tombstoneDeletionMs(t);
+  const rev=tombstoneRevivedMs(t);
+  if(rev && (!del || rev>=del)) return false;
+  return true;
+}
+function cloneTombstone(t){
+  const c={};
+  for(const k in t){ if(Object.prototype.hasOwnProperty.call(t,k)) c[k]=t[k]; }
+  return c;
+}
+// Latest activity wins per tombstone id. Equal activity keeps a revival
+// over a plain deletion so a re-add is not pushed back by an older copy.
+function mergeDeletedDrinks(localList, cloudList){
+  const byId=new Map();
+  function consider(t){
+    if(!t||t.id==null||String(t.id)==='') return;
+    const id=String(t.id);
+    const prev=byId.get(id);
+    if(!prev){ byId.set(id, cloneTombstone(t)); return; }
+    const bAct=tombstoneActivityMs(t), aAct=tombstoneActivityMs(prev);
+    if(bAct>aAct || (bAct===aAct && tombstoneRevivedMs(t)>tombstoneRevivedMs(prev)))
+      byId.set(id, cloneTombstone(t));
+  }
+  (localList||[]).forEach(consider);
+  (cloudList||[]).forEach(consider);
+  return Array.from(byId.values());
+}
+function pruneDeletedDrinks(list, nowMs){
+  const cutoff=(nowMs||0)-180*24*60*60*1000;
+  return (list||[]).filter(t=>{
+    const ms=tombstoneActivityMs(t);
+    if(!ms) return true;
+    return ms>cutoff;
+  });
+}
+// True only when an active tombstone is strictly newer than the drink.
+// Name match is case-insensitive because the same drink is often stored
+// under a different id on each phone.
+function isTombstoned(dk, tombstones){
+  const list=tombstones||[];
+  const id=String(dk&&dk.id||'');
+  const nm=drinkNameKey(dk&&dk.name);
+  const drinkMs=drinkActivityMs(dk);
+  return list.some(t=>{
+    if(!t) return false;
+    const idMatch=!!id && String(t.id)===id;
+    const nameMatch=!!nm && drinkNameKey(t.name)===nm;
+    if(!idMatch && !nameMatch) return false;
+    if(!tombstoneSuppresses(t)) return false;
+    const del=tombstoneDeletionMs(t);
+    if(!del) return drinkMs===0;
+    return del>drinkMs;
+  });
+}
+// Mark matching tombstones revived. Do not delete them: other phones still
+// have the row and the id-union merge would copy the deletion back.
+function reviveMatchingTombstones(list, name, id, nowIso){
+  const rows=list||[];
+  const nm=drinkNameKey(name);
+  const sid=(id==null||id==='')?'':String(id);
+  rows.forEach(t=>{
+    if(!t) return;
+    const idMatch=!!sid && String(t.id)===sid;
+    const nameMatch=!!nm && drinkNameKey(t.name)===nm;
+    if(idMatch||nameMatch) t.revivedAt=nowIso;
+  });
+  return rows;
+}
+function stampDrinkTimes(dk, nowIso){
+  if(!dk.createdAt) dk.createdAt=nowIso;
+  dk.updatedAt=nowIso;
+  return dk;
+}
+// A new deletion is newer than any revival of this id or name.
+function applyDrinkDeletion(list, dk, nowIso){
+  const out=list||[];
+  const id=String(dk&&dk.id||'');
+  const nm=drinkNameKey(dk&&dk.name);
+  let haveId=false;
+  out.forEach(t=>{
+    if(!t) return;
+    const idMatch=!!id && String(t.id)===id;
+    const nameMatch=!!nm && drinkNameKey(t.name)===nm;
+    if(!idMatch && !nameMatch) return;
+    t.date=nowIso;
+    if(dk&&dk.name) t.name=String(dk.name);
+    if('revivedAt' in t) delete t.revivedAt;
+    if(idMatch) haveId=true;
+  });
+  if(id && !haveId) out.push({id:id, name:String(dk&&dk.name||''), date:nowIso});
+  return out;
+}
+function cloudSnapshotUsable(cloud){
+  return !!cloud && typeof cloud==='object' && !Array.isArray(cloud);
+}
+function cloudPayload(state){
+  return {
+    members:state.members,
+    drinks:state.drinks,
+    transactions:state.transactions,
+    stock_purchases:state.stock_purchases||[],
+    audit:state.audit||[],
+    deletedDrinks:state.deletedDrinks||[],
+    settings:state.settings,
+    users:state.users
+  };
+}
+// Cloud-as-truth merge. Transactions and members keep the previous rules
+// (cloud rows win, genuinely new local rows are appended, content/name
+// duplicates collapse). Drinks follow the same cloud-wins rule; a local-only
+// drink is kept when no newer tombstone suppresses it.
+function mergeCloudState(state, cloud){
+  if(Array.isArray(cloud.transactions)){
+    const cloudTxIds=new Set(cloud.transactions.map(t=>String(t.id)));
+    const newLocal=state.transactions.filter(t=>!cloudTxIds.has(String(t.id)));
+    state.transactions=cloud.transactions.concat(newLocal).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const seen=new Set();
+    state.transactions=state.transactions.filter(t=>{
+      const key=String(t.memberId)+'|'+String(t.date)+'|'+String(t.amount)+'|'+(t.desc||'').substring(0,30);
+      if(seen.has(key)) return false; seen.add(key); return true;
+    });
+  }
+
+  if(Array.isArray(cloud.members)&&cloud.members.length>0){
+    const cloudMemIds=new Set(cloud.members.map(m=>String(m.id)));
+    const newMem=state.members.filter(m=>!cloudMemIds.has(String(m.id)));
+    state.members=cloud.members.concat(newMem);
+    const seenNames=new Set();
+    state.members=state.members.filter(m=>{const k=m.name.toLowerCase();if(seenNames.has(k))return false;seenNames.add(k);return true;});
+  }
+
+  if(Array.isArray(cloud.users)&&cloud.users.length>0){
+    state.users=cloud.users;
+    state.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
+  }
+
+  if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
+    const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
+    const cloudDrinkNames=new Set(cloud.drinks.map(d=>drinkNameKey(d.name)));
+    if(Array.isArray(cloud.deletedDrinks)){
+      state.deletedDrinks=mergeDeletedDrinks(state.deletedDrinks||[], cloud.deletedDrinks);
+    }
+    const tombs=state.deletedDrinks||[];
+    const newLocalDrinks=(state.drinks||[]).filter(d=>!cloudDrinkIds.has(String(d.id))
+      &&!cloudDrinkNames.has(drinkNameKey(d.name))
+      &&!isTombstoned(d, tombs));
+    state.drinks=cloud.drinks.concat(newLocalDrinks);
+  }
+
+  if(Array.isArray(cloud.stock_purchases)){
+    const spIds=new Set(cloud.stock_purchases.map(p=>String(p.id)));
+    const newSp=(state.stock_purchases||[]).filter(p=>!spIds.has(String(p.id)));
+    state.stock_purchases=cloud.stock_purchases.concat(newSp);
+  }
+
+  if(Array.isArray(cloud.audit)){
+    const aIds=new Set(cloud.audit.map(a=>String(a.id)));
+    const newA=(state.audit||[]).filter(a=>!aIds.has(String(a.id)));
+    state.audit=cloud.audit.concat(newA).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,1000);
+  }
+
+  if(cloud.settings) state.settings={...state.settings,...cloud.settings};
+  return state;
+}
+// Normal sync posts only after a usable cloud snapshot. Force push is the
+// explicit overwrite path and does not go through this gate.
+function decideSync(forcePush, cloud, state){
+  if(!forcePush && !cloudSnapshotUsable(cloud)){
+    return {post:false, retry:true, state:state};
+  }
+  if(!forcePush) mergeCloudState(state, cloud);
+  return {post:true, retry:false, state:state};
+}
+/* SYNC_PURE_END */
+
 function tombstoneDrink(dk){
-  S.deletedDrinks=S.deletedDrinks||[];
-  if(!S.deletedDrinks.some(t=>String(t.id)===String(dk.id)))
-    S.deletedDrinks.push({id:String(dk.id),name:String(dk.name||''),date:new Date().toISOString()});
+  S.deletedDrinks=applyDrinkDeletion(S.deletedDrinks||[], dk, new Date().toISOString());
 }
 
 // Apps Script /exec redirects to googleusercontent.com, which intermittently
@@ -1359,92 +1575,42 @@ async function syncNow(manual=false,forcePush=false,isUserEdit=false){
           }
         }catch(e){/* offline — push current users as-is */}
       }
-      await cloudPost(url,{members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users});
+      await cloudPost(url, cloudPayload(S));
     } else {
-      // CLOUD-AS-TRUTH SYNC: cloud wins, only add genuinely new local items
+      // CLOUD-AS-TRUTH SYNC: cloud wins, only add genuinely new local items.
+      // Apps Script intermittently returns an HTML page. Posting this phone's
+      // whole local copy after that read would overwrite cloud data we never saw.
       let cloud=null;
       try{ cloud=await cloudGet(url); }
-      catch(e){ console.warn('[SYNC] cloud read failed after retries:',e.message); }
-
-      if(cloud){
-        console.log('[SYNC] Cloud: '+((cloud.transactions||[]).length)+' tx, '+((cloud.users||[]).length)+' users');
-        
-        // Transactions: cloud is truth, add only NEW local transactions
-        if(Array.isArray(cloud.transactions)){
-          const cloudTxIds=new Set(cloud.transactions.map(t=>String(t.id)));
-          const newLocal=S.transactions.filter(t=>!cloudTxIds.has(String(t.id)));
-          S.transactions=cloud.transactions.concat(newLocal).sort((a,b)=>new Date(a.date)-new Date(b.date));
-          // Dedup by content (same member+date+amount+desc)
-          const seen=new Set();
-          S.transactions=S.transactions.filter(t=>{
-            const key=String(t.memberId)+'|'+String(t.date)+'|'+String(t.amount)+'|'+(t.desc||'').substring(0,30);
-            if(seen.has(key)) return false; seen.add(key); return true;
-          });
-        }
-        
-        // Members: cloud is truth, add new local members, dedup by name
-        if(Array.isArray(cloud.members)&&cloud.members.length>0){
-          const cloudMemIds=new Set(cloud.members.map(m=>String(m.id)));
-          const newMem=S.members.filter(m=>!cloudMemIds.has(String(m.id)));
-          S.members=cloud.members.concat(newMem);
-          const seenNames=new Set();
-          S.members=S.members.filter(m=>{const k=m.name.toLowerCase();if(seenNames.has(k))return false;seenNames.add(k);return true;});
-        }
-        
-        // Users: cloud ALWAYS wins (PINs from cloud)
-        if(Array.isArray(cloud.users)&&cloud.users.length>0){
-          S.users=cloud.users;
-          S.users.forEach(u=>{ if(u.pin) u.pin=String(u.pin).padStart(4,'0'); });
-        }
-        
-        // Drinks: cloud wins on conflict, but preserve any new local drinks
-        // (e.g. just-added drinks whose force-push hasn't completed yet).
-        // Also dedup by name (case-insensitive) — same drink added on two
-        // devices with different IDs would otherwise appear twice.
-        if(Array.isArray(cloud.drinks)&&cloud.drinks.length>0){
-          const cloudDrinkIds=new Set(cloud.drinks.map(d=>String(d.id)));
-          const cloudDrinkNames=new Set(cloud.drinks.map(d=>(d.name||'').toLowerCase().trim()));
-          // Merge tombstones from cloud FIRST, so a drink deleted on another
-          // device isn't treated as a "new local drink" and pushed back up.
-          if(Array.isArray(cloud.deletedDrinks)){
-            const seenT=new Set((S.deletedDrinks||[]).map(t=>String(t.id)));
-            cloud.deletedDrinks.forEach(t=>{ if(!seenT.has(String(t.id))){ S.deletedDrinks.push(t); seenT.add(String(t.id)); } });
-          }
-          const newLocalDrinks=S.drinks.filter(d=>!cloudDrinkIds.has(String(d.id))
-            &&!cloudDrinkNames.has((d.name||'').toLowerCase().trim())
-            &&!isTombstoned(d));
-          S.drinks=cloud.drinks.concat(newLocalDrinks);
-        }
-        // Stock purchases: cloud + new local
-        if(Array.isArray(cloud.stock_purchases)){
-          const spIds=new Set(cloud.stock_purchases.map(p=>String(p.id)));
-          const newSp=(S.stock_purchases||[]).filter(p=>!spIds.has(String(p.id)));
-          S.stock_purchases=cloud.stock_purchases.concat(newSp);
-        }
-        // Audit: cloud + new local
-        if(Array.isArray(cloud.audit)){
-          const aIds=new Set(cloud.audit.map(a=>String(a.id)));
-          const newA=(S.audit||[]).filter(a=>!aIds.has(String(a.id)));
-          S.audit=cloud.audit.concat(newA).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,1000);
-        }
-        if(cloud.settings) S.settings={...S.settings,...cloud.settings};
-        
-        invalidateBalCache(); normalizeData();
-        console.log('[SYNC] Result: '+S.transactions.length+' tx, '+S.users.length+' users');
+      catch(e){
+        console.warn('[SYNC] cloud read failed after retries:', e&&e.message);
+        cloud=null;
       }
-      
-      // Push result back to cloud
-      await cloudPost(url,{members:S.members,drinks:S.drinks,transactions:S.transactions,stock_purchases:S.stock_purchases||[],audit:S.audit||[],deletedDrinks:S.deletedDrinks||[],settings:S.settings,users:S.users});
+      if(cloudSnapshotUsable(cloud))
+        console.log('[SYNC] Cloud: '+((cloud.transactions||[]).length)+' tx, '+((cloud.users||[]).length)+' users');
+      const decision=decideSync(false, cloud, S);
+      if(!decision.post){
+        _cloudReadFailed=true;
+        console.warn('[SYNC] Aborting without POST — cloud read failed or was not JSON');
+        setSyncStatus('error','Sync failed — will retry');
+        if(manual) toast('⚠️ Sync failed — saved locally');
+        return;
+      }
+      invalidateBalCache();
+      normalizeData();
+      console.log('[SYNC] Result: '+S.transactions.length+' tx, '+S.users.length+' users');
+      await cloudPost(url, cloudPayload(S));
     }
-    
+
     const t=new Date(); setSyncStatus('synced',('Synced '+(t.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}))));
-    saveLocal(); _localDirty=false;
+    saveLocal(); _localDirty=false; _cloudReadFailed=false;
     if(manual) toast('✅ Synced — '+S.transactions.length+' transactions');
   }catch(e){ setSyncStatus('error','Sync failed — working offline'); if(manual) toast('⚠️ Sync failed — saved locally'); }
 }
 
-// Auto-sync: only push if there are local changes (2 min interval)
-setInterval(()=>{ if(_localDirty && !_syncPaused) syncNow(false); }, 120000);
+// Auto-sync local edits. Also retry a normal sync whose cloud read failed —
+// the retry reads again and still will not post if the read fails.
+setInterval(()=>{ if(!_syncPaused && (_localDirty || _cloudReadFailed)) syncNow(false); }, 120000);
 
 
 // Initialize from Cloud — full overwrite for first-time device setup
@@ -1968,12 +2134,23 @@ function saveEditDrink(){
   let img=editDrinkEmoji,imgType='emoji';
   if(editDrinkImgType==='photo'&&editDrinkPhoto){img=editDrinkPhoto;imgType='photo';}
   else if(editDrinkImgType==='logo'&&editDrinkLogoUrl){img=editDrinkLogoUrl;imgType='logo';}
-  // Re-adding a previously deleted name must clear its tombstone, else the
-  // sync merge would treat the new drink as deleted and drop it again.
-  const nmKey=name.toLowerCase().trim();
-  S.deletedDrinks=(S.deletedDrinks||[]).filter(t=>String(t.name||'').toLowerCase().trim()!==nmKey&&String(t.id)!==String(editingDrinkId||''));
-  if(!editingDrinkId){ S.drinks.push({id:uid(),name,imgType,img,price,stock,threshold,category}); auditLog(('Added drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' added')); }
-  else { const dk=S.drinks.find(x=>String(x.id)===String(editingDrinkId)); Object.assign(dk,{name,imgType,img,price,stock,threshold,category}); auditLog(('Edited drink: '+(name)), 'admin', {}); toast(('✅ '+(name)+' updated')); }
+  // Re-adding a deleted name must supersede its tombstone. Deleting the
+  // tombstone does not stick: the next sync copies the cloud row back by id,
+  // and other phones push the deletion again. revivedAt is merged latest-wins.
+  const savedAt=new Date().toISOString();
+  if(!Array.isArray(S.deletedDrinks)) S.deletedDrinks=[];
+  reviveMatchingTombstones(S.deletedDrinks, name, editingDrinkId, savedAt);
+  if(!editingDrinkId){
+    S.drinks.push({id:uid(),name,imgType,img,price,stock,threshold,category,createdAt:savedAt,updatedAt:savedAt});
+    auditLog(('Added drink: '+(name)), 'admin', {});
+    toast(('✅ '+(name)+' added'));
+  } else {
+    const dk=S.drinks.find(x=>String(x.id)===String(editingDrinkId));
+    Object.assign(dk,{name,imgType,img,price,stock,threshold,category});
+    stampDrinkTimes(dk, savedAt);
+    auditLog(('Edited drink: '+(name)), 'admin', {});
+    toast(('✅ '+(name)+' updated'));
+  }
   closeEditDrink(); saveLocal(); syncNow(false,true); renderDrinkMan();
 }
 
@@ -2982,7 +3159,30 @@ function handleImportFile(input){ const f=input.files[0];if(!f)return;const r=ne
 function doImport(){ if(!importData.length){toast('⚠️ No data');return;} let added=0,updated=0; if(importMode==='members'){importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const cell=(row.Cell||row.cell||row.Phone||'').toString().trim();const email=(row.Email||row.email||'').trim();const ex=S.members.find(m=>m.name.toLowerCase()===name.toLowerCase());if(ex){if(cell) ex.cell=cell;if(email) ex.email=email;updated++;}else{const id=uid();S.members.push({id,name,cell,email,photo:null,created:new Date().toISOString()});added++;}});auditLog(('Imported '+(added)+' members, updated '+(updated)),'admin',{});}else{
   const replaceAll=document.getElementById('importReplace').checked;
   if(replaceAll) S.drinks=[];
-  importData.forEach(row=>{const name=(row.Name||row.name||'').trim();if(!name)return;const price=parseFloat(row.Price||row.price||0)||0;const stock=parseInt(row.Stock||row.stock||0)||0;const threshold=parseInt(row.LowAlert||row.Threshold||row.Alert||5)||5;const emoji=(row.Emoji||row.emoji||'🍺').trim();const category=(row.Category||row.category||'').trim();const ex=S.drinks.find(d=>d.name.toLowerCase()===name.toLowerCase());if(ex){if(price>0)ex.price=price;ex.stock=stock;ex.threshold=threshold;if(category)ex.category=category;if(emoji&&emoji!=='🍺')ex.img=emoji;updated++;}else{S.drinks.push({id:uid(),name,imgType:'emoji',img:emoji,price,stock,threshold,category});added++;}});auditLog(('Imported '+(added)+' drinks, updated '+(updated)+(replaceAll?' (replaced all)':'')),'admin',{});}
+  const importedAt=new Date().toISOString();
+  if(!Array.isArray(S.deletedDrinks)) S.deletedDrinks=[];
+  importData.forEach(row=>{
+    const name=(row.Name||row.name||'').trim(); if(!name) return;
+    const price=parseFloat(row.Price||row.price||0)||0;
+    const stock=parseInt(row.Stock||row.stock||0)||0;
+    const threshold=parseInt(row.LowAlert||row.Threshold||row.Alert||5)||5;
+    const emoji=(row.Emoji||row.emoji||'🍺').trim();
+    const category=(row.Category||row.category||'').trim();
+    const ex=S.drinks.find(d=>drinkNameKey(d.name)===drinkNameKey(name));
+    if(ex){
+      if(price>0) ex.price=price; ex.stock=stock; ex.threshold=threshold;
+      if(category) ex.category=category; if(emoji&&emoji!=='🍺') ex.img=emoji;
+      stampDrinkTimes(ex, importedAt);
+      reviveMatchingTombstones(S.deletedDrinks, name, ex.id, importedAt);
+      updated++;
+    } else {
+      const id=uid();
+      S.drinks.push({id:id,name:name,imgType:'emoji',img:emoji,price:price,stock:stock,threshold:threshold,category:category,createdAt:importedAt,updatedAt:importedAt});
+      reviveMatchingTombstones(S.deletedDrinks, name, id, importedAt);
+      added++;
+    }
+  });
+  auditLog(('Imported '+(added)+' drinks, updated '+(updated)+(replaceAll?' (replaced all)':'')),'admin',{});}
   _syncPaused=true;
   toast(('✅ '+(added)+' added, '+(updated)+' updated — pushing to cloud…'));
   saveLocal(); closeImport();
