@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.42.1 (2026-11-19)                             ║
+  ║  Version: 4.42.2 (2026-11-19)                             ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.42.2 2026-11-19 Compact login. Bar till hidden from   ║
+  ║                    the picker only. Add to Tab clears the ║
+  ║                    iPhone home bar. Page reloads if stale.║
   ║  v4.42.1 2026-11-19 Member list scrolls; home header slim   ║
   ║                    Purchase drinks are in the scroller.   ║
   ║                    Session line lives in the header.      ║
@@ -107,9 +110,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#003d6b">
-<meta name="app-version" content="4.42.1">
+<meta name="app-version" content="4.42.2">
 <title>CCC Bar Tab</title>
 <link rel="icon" href="https://centcc.co.za/assets/images/CCC-logo-new.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -213,6 +216,17 @@ input, select, textarea { max-width: 100%; }
 
 .screen { display: none; height: 100dvh; max-height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--text); }
 .screen.active { display: flex; }
+@media (max-width: 899px) {
+  .screen.active {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
 
 /* ── HEADER ── */
 .hdr {
@@ -372,35 +386,44 @@ input, select, textarea { max-width: 100%; }
   display: flex;
   flex-direction: column;
 }
-.brand { color: #fff; padding: 22px 18px 14px; }
+.brand {
+  color: #fff;
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.brand-copy { min-width: 0; }
 .login-logo {
-  width: 76px;
-  height: 76px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
   background: #fff;
-  border-radius: 18px;
-  padding: 5px;
+  border-radius: 14px;
+  padding: 4px;
+  flex-shrink: 0;
 }
 .club {
   font-family: "Barlow Condensed", sans-serif;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  opacity: 0.86;
-  margin: 12px 0 0;
+  opacity: 0.9;
+  margin: 0;
 }
 .login-title {
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  font-size: 2.15rem;
-  line-height: 0.92;
-  margin: 6px 0 0;
+  font-size: 1.45rem;
+  line-height: 0.95;
+  margin: 1px 0 0;
   text-align: left;
 }
-.tagline { margin: 8px 0 0; max-width: 36rem; color: rgba(255, 255, 255, 0.92); font-size: 1.05rem; }
+.tagline { margin: 2px 0 0; max-width: 36rem; color: rgba(255, 255, 255, 0.9); font-size: 0.88rem; }
 .facts { display: none; margin: 16px 0 0; padding: 0; list-style: none; }
 .facts li {
   margin: 8px 0;
@@ -429,7 +452,7 @@ input, select, textarea { max-width: 100%; }
 .screen-title {
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 800;
-  font-size: 2rem;
+  font-size: 1.6rem;
   margin: 0 0 4px;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -439,47 +462,61 @@ input, select, textarea { max-width: 100%; }
 .login-card:has(#loginPinWrap[style*="display: block"]) .login-intro,
 .login-card:has(#loginPinWrap[style*="display:block"]) .login-intro { display: none; }
 
-.user-select { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.user-select { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; align-content: start; }
+.user-select > :not(.user-btn) { grid-column: 1 / -1; }
 .user-btn {
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 14px;
-  min-height: 72px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   cursor: pointer;
   text-align: left;
   width: 100%;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 .user-btn:active { transform: translateY(1px); }
 .ub-avatar {
-  width: 52px;
-  height: 52px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 800;
-  font-size: 1.2rem;
+  font-size: 0.95rem;
   color: #fff;
   flex-shrink: 0;
 }
-.ub-info h3 { font-family: "Barlow", sans-serif; font-size: 1.2rem; font-weight: 600; line-height: 1.15; }
-.ub-info p { font-size: 1rem; color: var(--muted); margin-top: 2px; }
+.ub-info { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; flex-wrap: nowrap; }
+.ub-info h3 {
+  font-family: "Barlow", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ub-info p { display: none; }
 .ub-role {
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 999px;
-  margin-top: 4px;
+  margin: 0;
   display: inline-block;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 .role-admin { background: #f3e9f8; color: #6d3484; }
 .role-manager { background: #e5f2fb; color: #005f9e; }
@@ -993,7 +1030,7 @@ input, select, textarea { max-width: 100%; }
 .cart-foot {
   background: #fff;
   border-top: 1px solid var(--border);
-  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  padding: 12px 14px 12px;
   flex-shrink: 0;
   box-shadow: 0 -8px 24px rgba(10, 22, 40, 0.06);
 }
@@ -1615,14 +1652,14 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
   }
   .brand {
-    padding: 40px 40px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    padding: 28px 32px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
   }
-  .login-logo { width: 88px; height: 88px; }
-  .login-title { font-size: 3.2rem; }
-  .facts { display: block; }
+  .login-logo { width: 72px; height: 72px; }
+  .login-title { font-size: 2rem; }
+  .facts { display: none; }
   .login-card {
     border-radius: 0;
     margin: 0;
@@ -1864,9 +1901,11 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
   <div class="login">
     <div class="brand">
       <img class="login-logo" src="https://centcc.co.za/assets/images/CCC-logo-new.png" onerror="this.style.display='none'" alt="Centurion Canoe Club">
-      <p class="club">Centurion Canoe Club</p>
-      <h1 class="login-title">CCC Bar Tab</h1>
-      <p class="tagline">Thursday time trial bar at Rietvlei Dam.</p>
+      <div class="brand-copy">
+        <p class="club">Centurion Canoe Club</p>
+        <h1 class="login-title">CCC Bar Tab</h1>
+        <p class="tagline">Thursday time trial · Rietvlei Dam</p>
+      </div>
       <ul class="facts">
         <li>Sell to a tab, take a top-up, and send a statement from the till.</li>
         <li>Members, prices and tabs sync with the club cloud.</li>
@@ -2056,8 +2095,26 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.42.1';
+const APP_VERSION = '4.42.2';
 const APP_BUILD = '2026-11-19';
+
+// If this tab is an older cached copy, load the current Pages file.
+// The cache-busting query misses the CDN copy of the bare URL.
+(function(){
+  try{
+    var meta=document.querySelector('meta[name="app-version"]');
+    if(!meta||!location.pathname) return;
+    fetch(location.pathname+'?cv='+Date.now(),{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
+      var m=String(html||'').match(/name="app-version" content="([^"]+)"/);
+      if(m&&m[1]&&m[1]!==meta.content) location.replace(location.pathname+'?v='+encodeURIComponent(m[1]));
+    }).catch(function(){});
+  }catch(e){}
+})();
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(function(reg){
+    if(reg.waiting) reg.waiting.postMessage('skip');
+  }).catch(function(){});
+}
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
 // labels, low-stock alerts, stock decrement on purchase). When false, the
@@ -2078,7 +2135,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
 const DEFAULT_USERS = [
   {id:'u1', name:'Elton', role:'admin',    color:'#9b59b6', pin:'1234', initials:'EL'},
   {id:'u2', name:'Johan', role:'manager',  color:'#0088cc', pin:'5678', initials:'JO'},
-  {id:'u3', name:'Bar',   role:'operator', color:'#1abc9c', pin:'0000', initials:'BR'},
 ];
 
 // Used when settings.adminEmails is empty (statements, receipts, bulk CC).
@@ -2669,13 +2725,18 @@ async function renderLogin(){
   showUserSelect();
 }
 
+function hideFromLogin(u){
+  if(!u) return true;
+  if(u.hidden===true||u.hideFromLogin===true) return true;
+  return String(u.name||'').trim().toLowerCase()==='bar';
+}
 function showUserSelect(){
   loginTarget=null; loginBuf='';
-  document.getElementById('loginUserSelect').style.display='flex';
+  document.getElementById('loginUserSelect').style.display='grid';
   document.getElementById('loginPinWrap').style.display='none';
   // First-time setup detection
   const isFirstTime=(S.transactions.length===0 || S.users.length===0) && S.settings.sheetsUrl;
-  let html=S.users.map(u=>('\n    <div class="user-btn" onclick="selectUser(\''+(u.id)+'\')">\n      <div class="ub-avatar" style="background:'+(u.color)+'">'+(u.initials||initials(u.name))+'</div>\n      <div class="ub-info">\n        <h3>'+(esc(u.name))+'</h3>\n        <p>'+sessionDevice+'</p>\n        <span class="ub-role '+(roleClass(u.role))+'">'+(roleLabel(u.role))+'</span>\n      </div>\n    </div>')).join('');
+  let html=S.users.filter(u=>!hideFromLogin(u)).map(u=>('\n    <div class="user-btn" onclick="selectUser(\''+(u.id)+'\')">\n      <div class="ub-avatar" style="background:'+(u.color)+'">'+(u.initials||initials(u.name))+'</div>\n      <div class="ub-info">\n        <h3>'+(esc(u.name))+'</h3>\n        <span class="ub-role '+(roleClass(u.role))+'">'+(roleLabel(u.role))+'</span>\n      </div>\n    </div>')).join('');
   if(isFirstTime){
     html+='<div style="margin-top:12px;padding:14px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.25);border-radius:12px;text-align:center;">'
       +'<div style="font-size:.9rem;font-weight:600;color:var(--accent);margin-bottom:6px;">🔄 First time on this device?</div>'
