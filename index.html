@@ -2,9 +2,11 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.42.2 (2026-11-19)                             ║
+  ║  Version: 4.42.3 (2026-11-19)                             ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.42.3 2026-11-19 Login cards stacked full width again  ║
+  ║                    Compact header and hidden Bar till stay║
   ║  v4.42.2 2026-11-19 Compact login. Bar till hidden from   ║
   ║                    the picker only. Add to Tab clears the ║
   ║                    iPhone home bar. Page reloads if stale.║
@@ -112,7 +114,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#003d6b">
-<meta name="app-version" content="4.42.2">
+<meta name="app-version" content="4.42.3">
 <title>CCC Bar Tab</title>
 <link rel="icon" href="https://centcc.co.za/assets/images/CCC-logo-new.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -462,61 +464,54 @@ input, select, textarea { max-width: 100%; }
 .login-card:has(#loginPinWrap[style*="display: block"]) .login-intro,
 .login-card:has(#loginPinWrap[style*="display:block"]) .login-intro { display: none; }
 
-.user-select { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; align-content: start; }
-.user-select > :not(.user-btn) { grid-column: 1 / -1; }
+.user-select { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .user-btn {
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px 10px;
-  min-height: 52px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  min-height: 72px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   cursor: pointer;
   text-align: left;
   width: 100%;
   box-shadow: var(--shadow);
-  min-width: 0;
 }
 .user-btn:active { transform: translateY(1px); }
 .ub-avatar {
-  width: 36px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 1.2rem;
   color: #fff;
   flex-shrink: 0;
 }
-.ub-info { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; flex-wrap: nowrap; }
+.ub-info { min-width: 0; flex: 1; }
 .ub-info h3 {
   font-family: "Barlow", sans-serif;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   font-weight: 600;
   line-height: 1.15;
   margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.ub-info p { display: none; }
+.ub-info p { font-size: 1rem; color: var(--muted); margin-top: 2px; }
 .ub-role {
-  font-size: 0.78rem;
+  font-size: 0.95rem;
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 999px;
-  margin: 0;
+  margin-top: 4px;
   display: inline-block;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  flex-shrink: 0;
 }
 .role-admin { background: #f3e9f8; color: #6d3484; }
 .role-manager { background: #e5f2fb; color: #005f9e; }
@@ -2095,7 +2090,7 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.42.2';
+const APP_VERSION = '4.42.3';
 const APP_BUILD = '2026-11-19';
 
 // If this tab is an older cached copy, load the current Pages file.
@@ -2732,11 +2727,11 @@ function hideFromLogin(u){
 }
 function showUserSelect(){
   loginTarget=null; loginBuf='';
-  document.getElementById('loginUserSelect').style.display='grid';
+  document.getElementById('loginUserSelect').style.display='flex';
   document.getElementById('loginPinWrap').style.display='none';
   // First-time setup detection
   const isFirstTime=(S.transactions.length===0 || S.users.length===0) && S.settings.sheetsUrl;
-  let html=S.users.filter(u=>!hideFromLogin(u)).map(u=>('\n    <div class="user-btn" onclick="selectUser(\''+(u.id)+'\')">\n      <div class="ub-avatar" style="background:'+(u.color)+'">'+(u.initials||initials(u.name))+'</div>\n      <div class="ub-info">\n        <h3>'+(esc(u.name))+'</h3>\n        <span class="ub-role '+(roleClass(u.role))+'">'+(roleLabel(u.role))+'</span>\n      </div>\n    </div>')).join('');
+  let html=S.users.filter(u=>!hideFromLogin(u)).map(u=>('\n    <div class="user-btn" onclick="selectUser(\''+(u.id)+'\')">\n      <div class="ub-avatar" style="background:'+(u.color)+'">'+(u.initials||initials(u.name))+'</div>\n      <div class="ub-info">\n        <h3>'+(esc(u.name))+'</h3>\n        <p>'+(sessionDevice)+'</p>\n        <span class="ub-role '+(roleClass(u.role))+'">'+(roleLabel(u.role))+'</span>\n      </div>\n    </div>')).join('');
   if(isFirstTime){
     html+='<div style="margin-top:12px;padding:14px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.25);border-radius:12px;text-align:center;">'
       +'<div style="font-size:.9rem;font-weight:600;color:var(--accent);margin-bottom:6px;">🔄 First time on this device?</div>'
