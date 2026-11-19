@@ -302,9 +302,9 @@ function baseState(over){
 })();
 
 (function versionAndSyncGate(){
-  assert(html.includes('const APP_VERSION = \'4.42\';'), 'APP_VERSION is 4.42');
+  assert(html.includes('const APP_VERSION = \'4.42.1\';'), 'APP_VERSION is 4.42.1');
   assert(html.includes('const APP_BUILD = \'2026-11-19\';'), 'APP_BUILD is 2026-11-19');
-  assert(html.includes('<meta name="app-version" content="4.42">'), 'meta app-version is 4.42');
+  assert(html.includes('<meta name="app-version" content="4.42.1">'), 'meta app-version is 4.42.1');
   assert(!html.includes('seenT.has'), 'tombstones are not unioned by id only');
   assert(!html.includes('S.deletedDrinks=(S.deletedDrinks||[]).filter'), 're-add does not delete the tombstone');
   const save = html.slice(html.indexOf('function saveEditDrink'), html.indexOf('function renderStock'));

@@ -2,9 +2,12 @@
 <!--
   ╔═══════════════════════════════════════════════════════════╗
   ║  CCC BAR TAB — Centurion Canoe Club                      ║
-  ║  Version: 4.42  (2026-11-19)                              ║
+  ║  Version: 4.42.1 (2026-11-19)                             ║
   ╠═══════════════════════════════════════════════════════════╣
   ║  CHANGELOG:                                               ║
+  ║  v4.42.1 2026-11-19 Member list scrolls; home header slim   ║
+  ║                    Purchase drinks are in the scroller.   ║
+  ║                    Session line lives in the header.      ║
   ║  v4.42 2026-11-19  Light layout, larger type and targets  ║
   ║                    Paper screens, navy and cyan accents,  ║
   ║                    self-hosted Barlow. Includes v4.41.    ║
@@ -106,7 +109,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#003d6b">
-<meta name="app-version" content="4.42">
+<meta name="app-version" content="4.42.1">
 <title>CCC Bar Tab</title>
 <link rel="icon" href="https://centcc.co.za/assets/images/CCC-logo-new.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -186,7 +189,12 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html { font-size: 18px; }
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 body {
   font-family: "Barlow", "Segoe UI", sans-serif;
   background:
@@ -203,35 +211,35 @@ img { max-width: 100%; display: block; }
 input, select, textarea { max-width: 100%; }
 ::placeholder { color: #5c7084; opacity: 1; }
 
-.screen { display: none; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--text); }
+.screen { display: none; height: 100dvh; max-height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--text); }
 .screen.active { display: flex; }
 
 /* ── HEADER ── */
 .hdr {
   background: var(--accent3);
   color: #fff;
-  padding: 8px 12px;
+  padding: 6px 8px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   border-bottom: 3px solid var(--cyan);
-  min-height: 64px;
 }
+.hdr > .hdr-meta { flex: 1 0 100%; margin: 0; }
 .hdr-logo {
-  height: 44px;
-  width: 44px;
+  height: 36px;
+  width: 36px;
   object-fit: contain;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
-  padding: 3px;
+  padding: 2px;
   flex-shrink: 0;
 }
-.hdr-title { flex: 1 1 8rem; min-width: 0; }
+.hdr-title { flex: 1 1 auto; min-width: 0; }
 .hdr-title h1 {
   font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -240,13 +248,22 @@ input, select, textarea { max-width: 100%; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hdr-title small { display: block; font-size: 0.95rem; opacity: 0.85; margin-top: 2px; }
+.hdr-title small, .hdr-meta {
+  display: block;
+  margin: 2px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .back-btn {
   background: rgba(255, 255, 255, 0.14);
   border: none;
   color: #fff;
-  width: var(--tap);
-  height: var(--tap);
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
   font-size: 1.35rem;
   cursor: pointer;
@@ -258,18 +275,19 @@ input, select, textarea { max-width: 100%; }
 .back-btn:active { background: rgba(255, 255, 255, 0.28); }
 .hdr-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   margin-left: auto;
+  flex-shrink: 0;
 }
 .hdr-btn {
   background: rgba(255, 255, 255, 0.14);
   border: none;
   color: #fff;
-  min-height: var(--tap);
-  min-width: var(--tap);
+  min-height: 44px;
+  min-width: 44px;
   padding: 0 14px;
   border-radius: 12px;
   font-size: 1.05rem;
@@ -295,11 +313,11 @@ input, select, textarea { max-width: 100%; }
 .user-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  min-height: var(--tap);
-  padding: 4px 12px 4px 6px;
+  min-height: 44px;
+  padding: 4px 10px 4px 4px;
   cursor: pointer;
 }
 .user-avatar {
@@ -327,10 +345,21 @@ input, select, textarea { max-width: 100%; }
 }
 
 .body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 14px 14px 28px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+#cartFoot { flex-shrink: 0; }
+.member-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  padding: 4px 0 8px;
 }
 .body::-webkit-scrollbar { width: 8px; }
 .body::-webkit-scrollbar-thumb { background: #c5d0dc; border-radius: 8px; }
@@ -563,30 +592,33 @@ input, select, textarea { max-width: 100%; }
 }
 .session-user { display: flex; align-items: center; gap: 8px; }
 
-.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: var(--gap); }
+.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
 .stat-card {
   background: #fff;
   border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: 12px 10px;
+  border-radius: 12px;
+  padding: 8px 10px;
   text-align: left;
   position: relative;
   overflow: hidden;
   cursor: pointer;
   box-shadow: var(--shadow);
   display: flex;
-  flex-direction: column;
-  min-height: 84px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 48px;
 }
 .stat-card:active { transform: translateY(1px); }
 .stat-card::after { display: none; }
 .stat-val {
   order: 1;
   font-family: "Barlow Condensed", sans-serif;
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   font-weight: 800;
   line-height: 1;
-  margin-top: 4px;
+  margin-top: 0;
 }
 .stat-lbl {
   order: 0;
@@ -802,8 +834,8 @@ input, select, textarea { max-width: 100%; }
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px;
-  margin-bottom: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1871,27 +1903,15 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 <div class="screen" id="sHome">
   <div class="hdr">
     <img class="hdr-logo" src="https://centcc.co.za/assets/images/CCC-logo-new.png" onerror="this.style.display='none'" alt="CCC">
-    <div class="hdr-title"><h1>CCC Bar Tab</h1><small>Thursday Time Trial</small></div>
+    <div class="hdr-title"><h1>CCC Bar Tab</h1></div>
     <div class="hdr-actions">
       <div class="sync-dot offline" id="syncDot"></div>
-      <button class="hdr-btn" onclick="syncNow(true)">⟳</button>
+      <button class="hdr-btn" onclick="syncNow(true)" aria-label="Sync">⟳</button>
       <div class="user-badge" onclick="logOut()" id="homeBadge"></div>
     </div>
+    <p class="hdr-meta"><span id="sessionInfo">Thu 19 Nov · v4.42.1</span> · <span id="syncLabel">Offline</span></p>
   </div>
   <div class="body">
-    <div class="home-hero">
-      <div class="home-hero-top">
-        <img class="home-logo" src="https://centcc.co.za/assets/images/CCC-logo-new.png" onerror="this.style.display='none'" alt="">
-        <div class="home-hero-text">
-          <h2>Thursday Bar 🛶</h2>
-          <p id="sessionInfo">Not logged in</p>
-        </div>
-      </div>
-      <div class="session-bar">
-        <div class="session-user" id="sessionUser"></div>
-        <div style="font-size:.68rem;color:var(--muted);" id="syncLabel">Offline</div>
-      </div>
-    </div>
     <div class="stat-row" id="homeStats"></div>
     <div class="menu-grid" id="homeMenu"></div>
   </div>
@@ -1921,17 +1941,19 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 <div class="screen" id="sMemberDetail">
   <div class="hdr">
     <button class="back-btn" onclick="goTo('sMemberList')">←</button>
-    <div class="hdr-title"><h1 id="detName">Member</h1></div>
+    <div class="hdr-title"><h1 id="detName">Member</h1><p class="hdr-meta" id="detBal"></p></div>
     <div class="hdr-actions"><button class="hdr-btn" onclick="editCurrentMember()">✏️ Edit</button></div>
   </div>
-  <div style="padding:11px 13px 0;flex-shrink:0;" id="detHero"></div>
-  <div style="padding:0 13px;flex-shrink:0;">
-    <div class="tab-bar">
-      <div class="tab-btn on" id="tPurchase" onclick="swTab('purchase')">🛒 Purchase</div>
-      <div class="tab-btn" id="tHistory" onclick="swTab('history')">📋 History</div>
+  <div class="body member-scroll">
+    <div class="member-tabs">
+      <div class="tab-bar">
+        <div class="tab-btn on" id="tPurchase" onclick="swTab('purchase')">🛒 Purchase</div>
+        <div class="tab-btn" id="tHistory" onclick="swTab('history')">📋 History</div>
+      </div>
     </div>
+    <div id="tabBody"></div>
+    <div id="detHero"></div>
   </div>
-  <div class="body" id="tabBody"></div>
   <div id="cartFoot"></div>
 </div>
 
@@ -2034,7 +2056,7 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 // ═══════════════════════════════════════════════════════════
 // APP VERSION
 // ═══════════════════════════════════════════════════════════
-const APP_VERSION = '4.42';
+const APP_VERSION = '4.42.1';
 const APP_BUILD = '2026-11-19';
 
 // Set to true to re-enable stock-level tracking (Stock Count tab, in-stock
@@ -2757,9 +2779,12 @@ function renderHome(){
   if(badge) badge.innerHTML=('<div class="user-avatar" style="background:'+(currentUser.color)+'">'+(currentUser.initials||initials(currentUser.name))+'</div><div class="user-name">'+(currentUser.name)+'</div>');
   // Session info
   const si=document.getElementById('sessionInfo');
-  if(si) si.textContent=(sessionDevice+' · '+(new Date().toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long'}))+' · v'+APP_VERSION);
-  const su=document.getElementById('sessionUser');
-  if(su) su.innerHTML=('<div style="width:7px;height:7px;border-radius:50%;background:'+(currentUser.color)+';flex-shrink:0;"></div><span style="font-size:.73rem;">'+(currentUser.name)+' · '+(roleLabel(currentUser.role))+' · tap to log out</span>');
+  if(si){
+    const d=new Date();
+    const wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+    const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+    si.textContent=wd+' '+d.getDate()+' '+mon+' · v'+APP_VERSION;
+  }
   // Stats
   const owed=S.members.reduce((s,m)=>{const b=bal(m.id);return s+(b<0?Math.abs(b):0);},0);
   const credit=S.members.reduce((s,m)=>{const b=bal(m.id);return s+(b>0?b:0);},0);
@@ -2883,6 +2908,8 @@ function renderDetHero(){
     }).join('');
     recentHtml+='</div>';
   }
+  const balEl=document.getElementById('detBal');
+  if(balEl) balEl.textContent=(b>=0?'Credit +':'Owes ')+fmt(b);
   document.getElementById('detHero').innerHTML=('\n    <div class="member-hero">\n      <div class="member-av-lg" onclick="editCurrentMember()">'+(av)+'<div class="cam-ov">📷</div></div>\n      <div class="mhi">\n        <h2>'+(esc(m.name))+'</h2>\n        <div class="bal-line '+(cls)+'">'+(b>=0?'Credit: +':'Owes: ')+(fmt(b))+'</div>\n        '+(contacts?'<div class="contact-line">'+contacts+'</div>':'<div class="warn-line">⚠️ No contact info — tap ✏️ Edit</div>')+'\n      </div>\n    </div>'+recentHtml);
 }
 
@@ -2891,6 +2918,8 @@ function swTab(t){
   document.getElementById('tPurchase').classList.toggle('on',t==='purchase');
   document.getElementById('tHistory').classList.toggle('on',t==='history');
   if(t==='purchase') renderPurchase(); else renderHistory();
+  const scroller=document.querySelector('#sMemberDetail .member-scroll');
+  if(scroller) scroller.scrollTop=0;
 }
 
 function renderPurchase(){
